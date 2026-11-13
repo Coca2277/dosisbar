@@ -207,7 +207,7 @@ end $$;
 
 -- Générer un code d'invitation (patron uniquement)
 create or replace function public.inviter(p_etab uuid, p_role text) returns text
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare c text;
 begin
   if not est_patron(p_etab) then raise exception 'Réservé au patron'; end if;
@@ -368,6 +368,8 @@ revoke all on function public.est_membre(uuid), public.est_patron(uuid), public.
   public.inviter(uuid,text), public.rejoindre(text), public.mes_etablissements(), public.carte_service(uuid),
   public._prix_item(char,uuid,uuid), public.vendre(uuid,char,uuid,int), public.service_en_cours(uuid),
   public.cloturer_service(uuid) from public, anon;
+-- fonction interne : jamais appelable directement (elle révèle les coûts)
+revoke all on function public._prix_item(char,uuid,uuid) from authenticated;
 grant execute on function public.est_membre(uuid), public.est_patron(uuid), public.creer_etablissement(text),
   public.inviter(uuid,text), public.rejoindre(text), public.mes_etablissements(), public.carte_service(uuid),
   public.vendre(uuid,char,uuid,int), public.service_en_cours(uuid), public.cloturer_service(uuid) to authenticated;
