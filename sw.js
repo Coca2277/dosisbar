@@ -1,7 +1,7 @@
 /* Dosis Bar — service worker : l'app s'ouvre même sans réseau.
    Les données (Supabase) ne passent jamais par ce cache. */
-const VERSION = "dosis-v2";
-const SHELL = ["./", "index.html", "css/app.css", "js/app.js", "js/config.js", "js/vendor/supabase.js",
+const VERSION = "dosis-v3";
+const SHELL = ["./", "index.html", "css/app.css", "js/app.js", "js/config.js", "js/vendor/supabase.js", "js/scan.js", "js/vendor/zxing.min.js",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

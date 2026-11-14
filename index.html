@@ -151,7 +151,8 @@
           <div class="stat"><div class="l">Valeur du stock HT</div><div class="v h" id="stVal">—</div></div>
           <div class="stat"><div class="l">À commander</div><div class="v h" id="stLow">—</div></div>
         </div>
-        <button class="btn ghost" id="invBtn">📋 Faire l'inventaire et voir les écarts</button>
+        <button class="btn" id="invScanBtn">📷 Inventaire en scannant les bouteilles</button><div class="gap"></div>
+        <button class="btn ghost" id="invBtn">📋 Inventaire à la main</button>
         <div class="lbl"><span>Bouteilles</span><span id="lastInv" style="text-transform:none;letter-spacing:0"></span></div>
         <div class="card list" id="stockList"></div>
         <div class="lbl"><span>Commande fournisseur</span></div>
@@ -172,6 +173,12 @@
 
     <div class="veil" id="veil"></div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><div id="sBody"></div></div>
+    <div class="scanner" id="scanner" role="dialog" aria-modal="true" aria-label="Lecteur de code-barres">
+      <video id="scanVideo" playsinline muted autoplay></video>
+      <div class="scan-top"><button class="iconbtn" id="scanClose" aria-label="Fermer le lecteur">✕</button><div class="scan-title" id="scanTitle">Visez le code-barres</div><button class="iconbtn" id="scanTorch" aria-label="Allumer la lampe" hidden>🔦</button></div>
+      <div class="scan-zone"><div class="scan-frame" id="scanFrame"><div class="scan-line"></div></div></div>
+      <div class="scan-panel" id="scanPanel"></div>
+    </div>
     <div class="auth" id="auth" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div id="authBody"></div></div>
     <div class="toast" id="toast"></div>
   </div>
@@ -179,6 +186,7 @@
 
 <script src="js/vendor/supabase.js"></script>
 <script src="js/config.js"></script>
+<script src="js/scan.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

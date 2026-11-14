@@ -143,9 +143,9 @@ function bottle(level, col) { const id = "bt" + (++gid), l = Math.max(0, Math.mi
   return `<svg width="30" height="38" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="${id}"><path d="${BOTTLE}"/></clipPath></defs><g clip-path="url(#${id})"><rect width="40" height="50" fill="rgba(244,237,228,.05)"/><rect x="0" y="${y}" width="40" height="50" fill="${col}"/></g><path d="${BOTTLE}" fill="none" stroke="rgba(244,237,228,.4)" stroke-width="1.6" stroke-linejoin="round"/></svg>`; }
 
 /* ================= Base en ligne : lecture ================= */
-const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min});
+const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||""});
 const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,
-  prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,modifie_le:new Date().toISOString()});
+  prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString()});
 async function q(promise) { const r = await promise; if (r.error) throw r.error; return r.data; }
 let lastLoad = 0;
 async function loadCloud() {
@@ -251,6 +251,10 @@ async function actSetPrices(list) { // [{kind, o, price}]
   if (cloud()) for (const it of list)
     await q(sb.from(it.kind === "p" ? "produits" : "cocktails").update({prix_vente_ttc: it.price, modifie_le: new Date().toISOString()}).eq("id", it.o.id));
   list.forEach(it => it.o.s = it.price);
+}
+async function actSetCode(id, code) {
+  if (cloud()) await q(sb.from("produits").update({code_barre: code, modifie_le: new Date().toISOString()}).eq("id", id));
+  byId(id).code = code; save();
 }
 const stockTimers = {};
 function actStock(id, st) {
@@ -539,10 +543,13 @@ function renderStock() {
 $("copyOrder").onclick = async () => { const o = orderList(); if (!o.length) return toast("Rien à commander");
   const txt = `Bonjour,\n\nVoici ma commande${S.bar ? " pour " + S.bar : ""} :\n` + o.map(x => `- ${x.p.n} : ${x.q} bouteille${x.q > 1 ? "s" : ""}`).join("\n") + "\n\nMerci !";
   try { await navigator.clipboard.writeText(txt); toast("Commande copiée ✓"); } catch (e) { toast("Copie impossible ici"); } };
-$("invBtn").onclick = () => {
+$("invBtn").onclick = () => openInventory(false);
+$("invScanBtn").onclick = () => openInventory(true);
+function openInventory(autoScan) {
   if (!S.products.length) return toast("Ajoutez d'abord des produits");
   openSheet(`<h2 class="h">Inventaire</h2><div class="sub">Comptez vos bouteilles (0,5 = une demie). On compare avec ce qui devrait rester d'après vos ventes.</div>
-    <div class="card list">${S.products.map(p => `<div class="row"><div class="grow"><div class="name">${esc(p.n)}</div><div class="meta">Théorique : ${f1(p.st)} bt</div></div>
+    <button class="btn" id="invScan" style="margin-bottom:12px">📷 Compter en scannant les bouteilles</button>
+    <div class="card list">${S.products.map(p => `<div class="row" data-row="${esc(p.id)}"><div class="grow"><div class="name">${esc(p.n)}</div><div class="meta">Théorique : ${f1(p.st)} bt</div></div>
       <input data-id="${esc(p.id)}" inputmode="decimal" value="${f1(p.st)}" aria-label="Bouteilles comptées : ${esc(p.n)}" style="width:76px;text-align:center;background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:10px;outline:none"></div>`).join("")}</div>
     <div class="card" id="invRes"></div><button class="btn" id="invOk">Valider l'inventaire</button>`, () => {
     const ins = [...$("sBody").querySelectorAll("input[data-id]")];
@@ -553,18 +560,97 @@ $("invBtn").onclick = () => {
         : `<p class="tip">✅ Aucun écart pour l'instant. Modifiez les quantités comptées.</p>`;
       return {lossSales, details}; };
     ins.forEach(i => i.oninput = calc); calc();
+    $("invScan").onclick = () => scanInventory(ins, calc);
+    if (autoScan) scanInventory(ins, calc);
     $("invOk").onclick = async () => { const r = calc(); $("invOk").classList.add("busy");
       const ok = await act(() => actInventory(ins.map(i => [i.dataset.id, Math.max(0, num(i.value))]), r.lossSales, r.details), "Inventaire enregistré ✓");
       $("invOk") && $("invOk").classList.remove("busy"); if (ok) closeSheet(); };
   });
-};
+}
+
+/* ================= Lecteur de code-barres ================= */
+let scanHandler = null;
+function openScanner(title, onCode) {
+  scanHandler = onCode;
+  $("scanTitle").textContent = title; $("scanTorch").hidden = true;
+  $("scanner").classList.add("on");
+  scanPanel(`<p class="scan-msg">Placez le code-barres de la bouteille dans le cadre.<br>Il est lu tout seul.</p>${manualBlock()}`);
+  Scan.start($("scanVideo"), code => { const f = $("scanFrame"); f.classList.remove("hit"); void f.offsetWidth; f.classList.add("hit"); scanHandler && scanHandler(code); })
+    .then(r => { $("scanTorch").hidden = !r.torch; })
+    .catch(e => {
+      const n = e && (e.name || e.message);
+      const msg = n === "NotAllowedError" ? "L'accès à l'appareil photo est refusé. Autorisez-le dans les réglages du navigateur pour dosisbar.com, ou tapez le code à la main."
+        : n === "NotFoundError" || n === "OverconstrainedError" ? "Aucun appareil photo trouvé sur cet appareil. Tapez le code à la main."
+        : n === "NO_CAMERA" ? "Le lecteur a besoin de l'appareil photo et d'une connexion sécurisée (https). Tapez le code à la main."
+        : "Impossible d'ouvrir l'appareil photo. Tapez le code à la main.";
+      scanPanel(`<p class="scan-msg">${msg}</p>${manualBlock(true)}`);
+    });
+}
+function closeScanner() { Scan.stop(); scanHandler = null; $("scanner").classList.remove("on"); }
+function scanPanel(html) { $("scanPanel").innerHTML = html; bindManual(); }
+function manualBlock(open) {
+  return `<div id="manBox" ${open ? "" : "hidden"}><div class="codefield" style="margin-top:6px"><input id="manCode" inputmode="numeric" placeholder="Chiffres sous le code-barres" maxlength="40" aria-label="Code-barres"><button id="manOk" aria-label="Valider le code">✓</button></div></div>
+    ${open ? "" : `<div class="center"><button class="link" id="manShow">Saisir le code à la main</button></div>`}`;
+}
+function bindManual() {
+  const sh = $("manShow"); if (sh) sh.onclick = () => { $("manBox").hidden = false; sh.parentElement.hidden = true; $("manCode").focus(); };
+  const ok = $("manOk"); if (!ok) return;
+  const go = () => { const c = Scan.normalize($("manCode").value.replace(/\s/g, "")); if (c.length < 4) return toast("Code trop court"); scanHandler && scanHandler(c); };
+  ok.onclick = go; $("manCode").onkeydown = e => { if (e.key === "Enter") go(); };
+}
+$("scanClose").onclick = closeScanner;
+$("scanTorch").onclick = async () => { const on = await Scan.toggleTorch(); $("scanTorch").style.background = on ? "var(--amber)" : ""; };
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("scanner").classList.contains("on")) closeScanner(); });
+
+function scanInventory(ins, calc) {
+  const counted = new Set(); let lastDone = "", doneAt = 0;
+  const input = id => ins.find(i => i.dataset.id === String(id));
+  const ready = () => { Scan.pause(false); scanPanel(`<div class="center" style="margin-bottom:8px">${counted.size ? `<span class="scan-count">✓ ${counted.size} produit${counted.size > 1 ? "s" : ""} compté${counted.size > 1 ? "s" : ""}</span>` : ""}</div>
+    <p class="scan-msg">Visez la bouteille suivante.</p>${manualBlock()}<div class="gap"></div><button class="btn ghost" id="scEnd">Terminer et voir les écarts</button>`); $("scEnd").onclick = finish; };
+  const finish = () => { closeScanner(); calc(); const r = document.querySelector("#invRes"); if (r) r.scrollIntoView({block: "center"}); };
+  const count = p => {
+    const el = input(p.id); if (!el) return ready();
+    scanPanel(`<div class="name">${esc(p.n)}</div><div class="meta">Théorique : ${f1(p.st)} bt${counted.has(p.id) ? " · déjà compté" : ""}</div>
+      <div class="qty"><button data-q="-1">−1</button><button data-q="-0.5">−½</button><input id="scQ" inputmode="decimal" value="${esc(el.value)}" aria-label="Bouteilles comptées"><button data-q="0.5">+½</button><button data-q="1">+1</button></div>
+      <button class="btn" id="scOk">Valider · bouteille suivante</button><div class="gap"></div><button class="btn ghost" id="scEnd">Terminer et voir les écarts</button>`);
+    $("scanPanel").querySelectorAll("[data-q]").forEach(b => b.onclick = () => { $("scQ").value = f1(Math.max(0, num($("scQ").value) + +b.dataset.q)); });
+    $("scOk").onclick = () => {
+      el.value = f1(Math.max(0, num($("scQ").value))); counted.add(p.id); lastDone = p.code || ""; doneAt = Date.now();
+      const row = el.closest(".row"); if (row) row.classList.add("done");
+      calc(); toast(`${p.n} : ${el.value} bt ✓`); ready();
+    };
+    $("scEnd").onclick = () => { $("scOk").click(); finish(); };
+    setTimeout(() => $("scQ") && $("scQ").select(), 50);
+  };
+  const unknown = code => {
+    const free = S.products.filter(x => !x.code), list = free.length ? free : S.products;
+    scanPanel(`<div class="name">Code inconnu</div><div class="meta">${esc(code)} n'est relié à aucun produit de votre carte.</div>
+      <div class="field" style="margin-top:12px"><label for="scLink">C'est quelle bouteille ?</label><select id="scLink">${opts(list.map(x => [x.id, x.n]), "")}</select></div>
+      <button class="btn" id="scLinkOk">Relier ce code et compter</button><div class="gap"></div><button class="btn ghost" id="scSkip">Ignorer</button>`);
+    $("scSkip").onclick = ready;
+    $("scLinkOk").onclick = async () => {
+      const pid = $("scLink").value; $("scLinkOk").classList.add("busy");
+      try { await actSetCode(pid, code); toast("Code relié ✓ La prochaine fois, il sera reconnu"); count(byId(pid)); }
+      catch (e) { $("scLinkOk").classList.remove("busy"); toast(frErr(e)); }
+    };
+  };
+  openScanner("Inventaire : visez une bouteille", code => {
+    if (code === lastDone && Date.now() - doneAt < 6000) return;   // la bouteille qu'on vient de compter
+    Scan.pause(true);
+    const p = S.products.find(x => x.code === code);
+    if (p) count(p); else unknown(code);
+  });
+  ready();
+}
 
 /* ================= Fiches produit et cocktail ================= */
 function opts(list, sel) { return list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(sel) ? "selected" : ""}>${esc(l)}</option>`).join(""); }
 function productSheet(id, preset) {
   const p = id ? byId(id) : (preset || {n:"",c:"Rhum",a:1,b:"",cap:70,d:4,s:"",st:0,m:2});
   openSheet(`<h2 class="h">${id ? esc(p.n) : "Nouveau produit"}</h2><div class="sub">${id ? "Modifiez, tout se recalcule" : "Les calculs se font tout seuls"}</div>
+    ${id ? "" : `<button class="btn ghost" id="fScanTop" style="margin-bottom:14px">📷 Scanner la bouteille pour remplir la fiche</button>`}
     <div class="field"><label for="fN">Nom</label><input id="fN" value="${esc(p.n)}" placeholder="Ex : Rhum ambré 7 ans" maxlength="80"></div>
+    <div class="field"><label for="fCode">Code-barres</label><div class="codefield"><input id="fCode" inputmode="numeric" value="${esc(p.code || "")}" placeholder="Scannez ou tapez le code" maxlength="40"><button id="fScan" type="button" aria-label="Scanner le code-barres">📷</button></div></div>
     <div class="two">
       <div class="field"><label for="fC">Catégorie</label><select id="fC">${opts(Object.keys(CATS).map(c => [c, CATS[c] + "  " + c]), p.c)}</select></div>
       <div class="field"><label for="fA">Type</label><select id="fA">${opts([[1,"Alcool · 20 %"],[0,"Sans alcool · 10 %"]], p.a)}</select></div>
@@ -577,7 +663,23 @@ function productSheet(id, preset) {
     </div>
     <div class="card" style="background:var(--card2)"><div class="res" id="fRes"></div></div>
     <button class="btn" id="fSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="fDel">Supprimer ce produit</button>` : ""}`, () => {
-    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value)});
+    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim()});
+    const scanFill = () => openScanner("Visez le code-barres de la bouteille", async code => {
+      closeScanner(); $("fCode").value = code;
+      const other = S.products.find(x => x.code === code && x.id !== id);
+      if (other) toast(`Attention : ce code est déjà celui de « ${other.n} »`);
+      if (!id && !$("fN").value.trim()) {
+        toast("Recherche du produit…");
+        const info = await Scan.lookup(code);
+        if (info && info.nom) {
+          $("fN").value = info.nom; $("fC").value = CATS[info.categorie] ? info.categorie : "Autre"; $("fA").value = info.alcool ? "1" : "0";
+          if (info.cap) { $("fCap").value = f1x(info.cap); if (["Bière", "Soft", "Eau"].includes(info.categorie) && info.cap <= 75) $("fD").value = f1x(info.cap); }
+          toast("Produit trouvé ✓ Vérifiez et ajoutez vos prix");
+        } else toast("Produit inconnu : tapez le nom, le code est enregistré");
+      }
+      upd(); setTimeout(() => ($("fN").value ? $("fB") : $("fN")).focus(), 300);
+    });
+    $("fScan").onclick = scanFill; if ($("fScanTop")) $("fScanTop").onclick = scanFill;
     const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T);
       $("fRes").innerHTML = `<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
       <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate, T)}">${pct(c.rate)}</div></div>

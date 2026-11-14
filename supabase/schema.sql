@@ -57,6 +57,9 @@ create table if not exists public.produits (
   modifie_le      timestamptz not null default now()
 );
 create index if not exists produits_etab_idx on public.produits(etab_id);
+-- code-barres de la bouteille (lecteur de l'app)
+alter table public.produits add column if not exists code_barre text;
+create index if not exists produits_code_idx on public.produits(etab_id, code_barre);
 
 create table if not exists public.cocktails (
   id              uuid primary key default gen_random_uuid(),
