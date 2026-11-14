@@ -234,3 +234,9 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .codefield{display:flex;gap:8px}
 .codefield input{flex:1}
 .codefield button{flex:none;width:48px;border-radius:12px;border:1px solid var(--line);background:var(--card2);font-size:20px}
+
+/* ---------- Import caisse ---------- */
+.drop{display:block;text-align:center;border:2px dashed var(--line2);border-radius:var(--r);padding:26px 16px;margin-bottom:12px;cursor:pointer;background:var(--card);transition:border-color .2s,background .2s}
+.drop:hover,.drop.over{border-color:var(--amber);background:var(--amberT)}
+.drop .e{font-size:30px;margin-bottom:6px}
+.field input[type=date]{color-scheme:dark}

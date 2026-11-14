@@ -167,6 +167,7 @@ async function loadCloud() {
         ing: ci.filter(i => i.cocktail_id === c.id).map(i => ({p:i.produit_id,cl:+i.cl}))})),
       history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres})),
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
+    S.alias = et.alias_caisse || {};
     ETAB.nom = et.nom;
   }
   await refreshLive();
@@ -274,6 +275,33 @@ async function actInventory(counts, loss, details) {
   counts.forEach(([id, st]) => byId(id).st = st);
   S.lastInv = {date: new Date().toISOString(), loss};
 }
+async function actImport(list, dateISO, ref, aliases) {
+  const le = new Date(dateISO + "T23:00:00");
+  let res;
+  if (cloud()) {
+    res = await q(sb.rpc("importer_ventes", {p_etab: ETAB.id, p_le: le.toISOString(), p_ref: ref,
+      p_items: list.map(x => ({t: x.key[0], id: x.key.slice(1), q: x.q, ttc: x.hasTtc ? x.ttc : null}))}));
+    await q(sb.from("etablissements").update({alias_caisse: aliases}).eq("id", ETAB.id));
+    S.alias = aliases; lastLoad = 0;
+    try { await loadCloud(); } catch (e) {}
+    return {ca: +res.ca_ttc, ht: +res.ca_ht, marg: +res.marge_ht, qty: +res.verres};
+  }
+  S.importRefs = S.importRefs || [];
+  if (S.importRefs.includes(ref)) throw new Error("Ce fichier a déjà été importé");
+  res = importEstimate(list);
+  list.forEach(x => consume(x.key, x.q));
+  S.history.push({date: le.toISOString(), marg: res.marg, ca: res.ca, qty: res.qty});
+  S.history.sort((a, b) => new Date(a.date) - new Date(b.date)); S.history = S.history.slice(-14);
+  S.importRefs.push(ref); S.alias = aliases; save();
+  return res;
+}
+function importEstimate(list) {
+  let ca = 0, ht = 0, marg = 0, qty = 0;
+  list.forEach(x => { const i = allItems().find(a => a.key === x.key); if (!i) return;
+    const unit = x.hasTtc && x.q ? x.ttc / x.q : i.o.s, h = unit / (1 + i.c.tva);
+    ca += unit * x.q; ht += h * x.q; marg += (h - i.c.cost) * x.q; qty += x.q; });
+  return {ca, ht, marg, qty};
+}
 async function actSettings(x) {
   if (cloud()) {
     await q(sb.from("etablissements").update({nom: x.bar || ETAB.nom, objectif_spiritueux: x.target, objectif_bouteilles: x.target2, volume_mois: x.vol}).eq("id", ETAB.id));
@@ -331,8 +359,9 @@ function renderHome() {
   const t = liveTotals();
   $("tonight").innerHTML = t.qty
     ? `<div class="tonight"><div><span class="live">Service en cours</span><div class="big h">${eur(t.marg)}</div><div class="meta">de marge · ${t.qty} verre${t.qty > 1 ? "s" : ""} · ${eur(t.ca)} TTC</div></div><button class="mini" data-go2>Continuer</button></div>`
-    : `<div class="tonight"><div><div class="name">Prêt pour le service ?</div><div class="meta" style="white-space:normal">Suivez la marge du soir en direct, verre par verre.</div></div><button class="mini" data-go2 style="flex:none">Démarrer</button></div>`;
+    : `<div class="tonight"><div><div class="name">Prêt pour le service ?</div><div class="meta" style="white-space:normal">Suivez la marge du soir en direct, verre par verre, ou <a class="link" data-imp style="padding:0;font-size:12px">importez le fichier de votre caisse</a>.</div></div><button class="mini" data-go2 style="flex:none">Démarrer</button></div>`;
   $("tonight").querySelector("[data-go2]").onclick = () => go("service");
+  const im = $("tonight").querySelector("[data-imp]"); if (im) im.onclick = importSheet;
 
   const o = opportunities();
   $("oppTotal").textContent = o.length ? "+" + eur(o.reduce((s, i) => s + i.month, 0), 0) + " / mois" : "";
@@ -406,6 +435,7 @@ function renderService() {
   $("sMarg").textContent = barman ? eur(t.ca) : eur(t.marg);
   $("sCA").textContent = barman ? t.qty : eur(t.ca, 0);
   $("sQty").textContent = t.qty;
+  $("importBtn").hidden = barman;
   $("svcLive").style.visibility = t.qty ? "visible" : "hidden";
   const items = serviceItems();
   const cats = ["Tout", ...new Set(items.map(i => i.c))];
@@ -565,6 +595,105 @@ function openInventory(autoScan) {
     $("invOk").onclick = async () => { const r = calc(); $("invOk").classList.add("busy");
       const ok = await act(() => actInventory(ins.map(i => [i.dataset.id, Math.max(0, num(i.value))]), r.lossSales, r.details), "Inventaire enregistré ✓");
       $("invOk") && $("invOk").classList.remove("busy"); if (ok) closeSheet(); };
+  });
+}
+
+/* ================= Import des ventes de caisse ================= */
+const CAISSES = "SumUp, Flatpay, Zelty, Lightspeed, L'Addition, Square, Tiller, Innovorder…";
+function importSheet() {
+  if (isBarman()) return;
+  if (!allItems().length) return toast("Ajoutez d'abord vos produits à la carte");
+  openSheet(`<h2 class="h">Ventes de la caisse</h2><div class="sub">Importez le fichier des ventes de votre caisse : la marge de la soirée et le stock se calculent tout seuls.</div>
+    <label class="drop" id="impDrop"><input type="file" id="impFile" accept=".csv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv" hidden>
+      <div class="e">📄</div><div class="name">Choisir le fichier</div><div class="meta" style="white-space:normal">CSV ou Excel · ${CAISSES}</div></label>
+    <div class="card"><div class="name" style="font-size:14px">Où trouver ce fichier ?</div>
+      <p class="tip" style="margin-top:6px">Dans l'espace en ligne de votre caisse : <b>Rapports</b> ou <b>Statistiques</b> → <b>Ventes par produit</b> (ou par article) → <b>Exporter</b> en CSV ou Excel, pour la journée voulue.</p></div>
+    <div class="center"><button class="link" id="impDemo">Pas de caisse ? Essayer avec un fichier d'exemple</button></div>`, () => {
+    $("impDemo").onclick = async () => { try { const r = await fetch("exemples/ventes-exemple.csv"); const b = await r.blob(); impRead(new File([b], "exemple-caisse.csv", {type: "text/csv"})); } catch (e) { toast("Exemple indisponible hors connexion"); } };
+    $("impFile").onchange = e => { const f = e.target.files[0]; if (f) impRead(f); };
+    const d = $("impDrop");
+    d.ondragover = e => { e.preventDefault(); d.classList.add("over"); };
+    d.ondragleave = () => d.classList.remove("over");
+    d.ondrop = e => { e.preventDefault(); d.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) impRead(f); };
+  });
+}
+$("importBtn").onclick = importSheet;
+async function impRead(file) {
+  try {
+    toast("Lecture du fichier…");
+    const {rows, ref} = await Import.readFile(file);
+    const det = Import.detect(rows);
+    const saved = (lsGet("dosisbar.colmap") || {})[det.header.map(h => Import.normName(h)).join("|")];
+    const map = saved || det.map;
+    if (saved || det.sure) impMatch(det, map, ref, file.name); else impColumns(det, map, ref, file.name);
+  } catch (e) { toast(frErr(e)); }
+}
+function impColumns(det, map, ref, fname) {
+  const cols = det.header.map((h, i) => [i, h || "Colonne " + (i + 1)]);
+  const sel = (id, v, none) => `<select id="${id}">${none ? `<option value="">${none}</option>` : ""}${opts(cols, v ?? "")}</select>`;
+  const prev = det.data.slice(0, 3);
+  openSheet(`<h2 class="h">Les colonnes du fichier</h2><div class="sub">${esc(fname)} · Dites-nous quelle colonne correspond à quoi. Ce sera retenu pour la prochaine fois.</div>
+    <div class="field"><label for="cName">Nom du produit</label>${sel("cName", map.name, "— Choisir —")}</div>
+    <div class="two"><div class="field"><label for="cQty">Quantité vendue</label>${sel("cQty", map.qty, "1 par ligne")}</div>
+    <div class="field"><label for="cTot">Montant encaissé TTC</label>${sel("cTot", map.total, "Prix de la carte")}</div>
+    <div class="field"><label for="cUnit">Prix unitaire TTC</label>${sel("cUnit", map.unit, "—")}</div>
+    <div class="field"><label for="cDate">Date</label>${sel("cDate", map.date, "—")}</div></div>
+    <div class="card list" id="cPrev"></div><button class="btn" id="cOk">Continuer</button>`, () => {
+    const read = () => { const m = {}; [["name","cName"],["qty","cQty"],["total","cTot"],["unit","cUnit"],["date","cDate"]].forEach(([k, id]) => { const v = $(id).value; if (v !== "") m[k] = +v; }); return m; };
+    const show = () => { const m = read();
+      $("cPrev").innerHTML = prev.map(r => `<div class="row"><div class="grow"><div class="name">${esc(m.name != null ? r[m.name] : "?")}</div><div class="meta">quantité ${esc(m.qty != null ? r[m.qty] : "1")} · montant ${esc(m.total != null ? r[m.total] : m.unit != null ? r[m.unit] + " l'unité" : "prix carte")}</div></div></div>`).join("") || `<div class="empty">Aucune ligne</div>`; };
+    $("sBody").querySelectorAll("select").forEach(s => s.onchange = show); show();
+    $("cOk").onclick = () => { const m = read(); if (m.name == null) return toast("Choisissez la colonne du nom du produit");
+      const all = lsGet("dosisbar.colmap") || {}; all[det.header.map(h => Import.normName(h)).join("|")] = m; lsSet("dosisbar.colmap", all);
+      impMatch(det, m, ref, fname); };
+  });
+}
+function impMatch(det, map, ref, fname) {
+  const g = Import.group(det, map);
+  if (!g.items.length) { toast("Aucune vente trouvée avec ces colonnes"); return impColumns(det, map, ref, fname); }
+  const catalog = allItems().map(i => ({key: i.key, label: i.o.n}));
+  const rows = Import.match(g.items, catalog, S.alias || {});
+  const choices = [["", "— Relier à… —"], ...allItems().map(i => [i.key, (i.kind === "k" ? "🍹 " : "") + i.o.n]), ["ignore", "Ignorer (pas suivi dans Dosis Bar)"]];
+  const today = new Date().toISOString().slice(0, 10);
+  const badge = st => st === "ok" || st === "memo" ? `<span class="badge b-ok">Reconnu</span>` : st === "check" ? `<span class="badge b-warn">À vérifier</span>` : `<span class="badge b-bad">À relier</span>`;
+  const colTxt = ["name","qty","total","date"].filter(k => map[k] != null).map(k => ({name:"produit",qty:"quantité",total:"montant",date:"date"})[k] + " = « " + esc(det.header[map[k]]) + " »").join(" · ");
+  openSheet(`<h2 class="h">Ventes à importer</h2><div class="sub">${esc(fname)} · ${g.lines} ligne${g.lines > 1 ? "s" : ""} lue${g.lines > 1 ? "s" : ""}</div>
+    <div class="card" style="padding:12px 14px"><div class="meta" style="white-space:normal">Colonnes : ${colTxt}</div><button class="link" id="mCols" style="padding:6px 0 0">Modifier les colonnes</button></div>
+    <div class="field"><label for="mDate">Date du service</label><input id="mDate" type="date" value="${g.date || today}" max="${today}"></div>
+    <div class="lbl" style="margin-top:6px"><span>Produits de la caisse</span><span id="mLeft" style="text-transform:none;letter-spacing:0"></span></div>
+    <div class="card list">${rows.map((r, i) => `<div class="row" style="flex-wrap:wrap"><div class="grow"><div class="name">${esc(r.label)}</div><div class="meta">× ${r.q}${r.hasTtc ? " · " + eur(r.ttc) : ""}</div></div>${badge(r.status)}
+      <div class="field" style="flex-basis:100%;margin:8px 0 0"><select data-i="${i}" aria-label="Produit de la carte pour ${esc(r.label)}">${opts(choices, r.choice)}</select></div></div>`).join("")}</div>
+    <div class="card"><div class="res" id="mSum"></div></div>
+    <button class="btn" id="mGo">Importer la soirée</button>`, () => {
+    $("mCols").onclick = () => impColumns(det, map, ref, fname);
+    const resolved = () => { const agg = new Map();
+      rows.forEach(r => { if (!r.choice || r.choice === "ignore") return;
+        const a = agg.get(r.choice) || {key: r.choice, q: 0, ttc: 0, hasTtc: true};
+        a.q += r.q; a.ttc += r.ttc; a.hasTtc = a.hasTtc && r.hasTtc; agg.set(r.choice, a); });
+      return [...agg.values()].filter(a => a.q !== 0); };
+    const upd = () => { const list = resolved(), e = importEstimate(list), left = rows.filter(r => !r.choice).length;
+      $("mLeft").textContent = left ? `${left} à relier` : "tout est relié ✓"; $("mLeft").style.color = left ? "var(--amber2)" : "var(--ok)";
+      $("mSum").innerHTML = `<div class="hl"><div><div class="l">Marge de la soirée (HT)</div><div class="v h">${eur(e.marg)}</div></div>${glass(e.ht ? e.marg / e.ht : 0, {w:36})}</div>
+        <div><div class="l">Ventes TTC</div><div class="v h">${eur(e.ca)}</div></div><div><div class="l">Verres</div><div class="v h">${e.qty}</div></div>`;
+      $("mGo").textContent = left ? `Importer (${left} ligne${left > 1 ? "s" : ""} non reliée${left > 1 ? "s" : ""} ignorée${left > 1 ? "s" : ""})` : `Importer la soirée · ${e.qty} verres`; };
+    $("sBody").querySelectorAll("select[data-i]").forEach(s => s.onchange = () => { const r = rows[+s.dataset.i]; r.choice = s.value; r.status = s.value ? "memo" : "unknown"; upd(); });
+    upd();
+    $("mGo").onclick = async () => {
+      const list = resolved(); if (!list.length) return toast("Reliez au moins un produit");
+      const aliases = Object.assign({}, S.alias || {}); rows.forEach(r => { if (r.choice) aliases[r.key] = r.choice; });
+      $("mGo").classList.add("busy");
+      try {
+        const res = await actImport(list, $("mDate").value || today, ref, aliases);
+        save(); render();
+        openSheet(`<div style="text-align:center;padding:6px 0 4px">${glass(res.ht ? res.marg / res.ht : .7, {w:60, wave:true})}</div>
+          <h2 class="h" style="text-align:center">Soirée importée ✓</h2><div class="sub" style="text-align:center">${new Date($("mDate") ? $("mDate").value : today).toLocaleDateString("fr-FR", {weekday:"long", day:"numeric", month:"long"})}</div>
+          <div class="res" style="margin-bottom:14px"><div class="hl"><div><div class="l">Marge de la soirée (HT)</div><div class="v h">${eur(res.marg)}</div></div></div>
+          <div><div class="l">Ventes TTC</div><div class="v h">${eur(res.ca)}</div></div><div><div class="l">Verres</div><div class="v h">${res.qty}</div></div>
+          <div><div class="l">Taux de marge</div><div class="v h">${pct(res.ht ? res.marg / res.ht * 100 : NaN)}</div></div><div><div class="l">Stock</div><div class="v h" style="font-size:15px">mis à jour</div></div></div>
+          <p class="tip" style="margin-bottom:14px">Les noms de votre caisse sont retenus : la prochaine fois, tout sera relié automatiquement.</p>
+          <button class="btn" id="impHome">Voir l'accueil</button>`, () => { $("impHome").onclick = () => { closeSheet(); go("home"); }; });
+      } catch (e) { $("mGo").classList.remove("busy"); toast(frErr(e)); }
+    };
   });
 }
 
