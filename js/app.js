@@ -402,15 +402,26 @@ async function actSettings(x) {
 let view = "home";
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 document.querySelectorAll("[data-go]").forEach(a => a.onclick = () => go(a.dataset.go));
+function navSync() {
+  const cur = view === "menu" && menuKind === "c" ? "cuisine" : view;
+  document.querySelectorAll("nav button").forEach(b => { b.classList.toggle("on", b.dataset.v === cur);
+    b.hidden = (isBarman() && b.dataset.v !== "service") || (b.dataset.v === "cuisine" && !restoOn()); });
+  const t = document.querySelector("#v-menu > h2"), st = document.querySelector("#v-menu > .sub");
+  if (t) t.textContent = menuKind === "c" ? "Ma cuisine" : "Ma carte";
+  if (st) st.textContent = menuKind === "c" ? "Plats, préparations et ingrédients" : "Touchez un produit pour le modifier";
+}
 function go(v) {
   if (isBarman()) v = "service";
+  if (v === "cuisine") { menuKind = "c"; v = "menu"; }
+  else if (v === "menu" && menuKind === "c") menuKind = "p";
   view = v;
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("on", s.id === "v-" + v));
-  document.querySelectorAll("nav button").forEach(b => { b.classList.toggle("on", b.dataset.v === v); b.hidden = isBarman() && b.dataset.v !== "service"; });
+  navSync();
   $("fab").style.display = v === "menu" ? "block" : "none";
   $("main").scrollTop = 0; render(); bgReload();
 }
 function render() {
+  navSync();
   if (view === "home") renderHome();
   if (view === "menu") renderMenu();
   if (view === "service") renderService();
@@ -480,7 +491,7 @@ function renderHome() {
 /* ================= Carte ================= */
 let menuKind = "p", sortBy = "marg", cat = "Toutes";
 function armSeg() { $("menuSeg").querySelectorAll("button").forEach(b => { b.classList.toggle("on", b.dataset.v === menuKind);
-  b.onclick = () => { menuKind = b.dataset.v; $("menuSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderMenu(); }; }); }
+  b.onclick = () => { menuKind = b.dataset.v; $("menuSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); navSync(); renderMenu(); }; }); }
 armSeg();
 $("q").oninput = () => renderMenu();
 let cuTab = "d";
@@ -1082,7 +1093,7 @@ function restoSheet() {
     $("roT").oninput = () => $("roTl").textContent = $("roT").value + " %";
     $("roSave").onclick = async () => { $("roSave").classList.add("busy");
       const x = {on: true, metier: $("roM").value, target: +$("roT").value};
-      if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Option Restauration activée ✓")) { closeSheet(); if (!r.on) { menuKind = "c"; cuTab = MODE === "demo" ? "d" : "i"; go("menu"); } }
+      if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Option Restauration activée ✓")) { closeSheet(); if (!r.on) { cuTab = MODE === "demo" ? "d" : "i"; go("cuisine"); } else navSync(); }
       else $("roSave").classList.remove("busy"); };
     if ($("roOff")) armBtn($("roOff"), "Toucher encore pour désactiver", async () => { if (await act(() => actResto({...r, on: false}), "Option désactivée")) closeSheet(); });
   });
