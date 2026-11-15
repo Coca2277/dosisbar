@@ -42,7 +42,8 @@ function seed() {
   const history = [], base = [212,188,264,301,176,342];
   for (let i = 6; i >= 1; i--) { const d = new Date(); d.setDate(d.getDate() - i);
     history.push({date:d.toISOString(),marg:base[6-i],ca:Math.round(base[6-i]*1.55),qty:Math.round(base[6-i]/5.2),demo:true}); }
-  return {v:3,bar:"",target:80,target2:65,vol:60,products,cocktails,live:{},history,lastInv:null};
+  return {v:3,bar:"",target:80,target2:65,vol:60,products,cocktails,live:{},history,lastInv:null,
+    ch:{loyer:1800,energie:380,salaires:2600,assur:120,compta:150,abo:90,pret:0,autres:160,v:2600,net:15}};
 }
 function emptyState() { return {v:3,bar:"",target:80,target2:65,vol:60,products:[],cocktails:[],live:{},history:[],lastInv:null,carte:[]}; }
 function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
@@ -93,14 +94,30 @@ const isNetErr = e => !navigator.onLine || /fetch|network|Load failed|NetworkErr
 
 /* ================= Calculs ================= */
 const pcost = (p, cl) => p && p.cap > 0 ? p.b / p.cap * cl : 0;
+/* Charges fixes : réparties de façon égale sur chaque verre vendu */
+const CH_LINES = [["loyer","Loyer et charges locatives"],["energie","Électricité, chauffage, eau"],["salaires","Salaires chargés (barmen, extras)"],
+  ["assur","Assurances"],["compta","Comptable et banque"],["abo","Abonnements (caisse, internet, logiciels)"],["pret","Remboursement de prêt"],["autres","Autres charges"]];
+const chTotal = (c = S.ch) => c ? CH_LINES.reduce((t, [k]) => t + num(c[k]), 0) : 0;
+const cpv = (c = S.ch) => c && num(c.v) > 0 && chTotal(c) > 0 ? chTotal(c) / num(c.v) : 0;
+const chOn = () => cpv() > 0;
+const netTarget = () => S.ch && isFinite(num(S.ch.net)) ? num(S.ch.net) : 15;
+function withCh(r) { const ch = cpv(), full = r.cost + ch, net = r.ht - full;
+  return Object.assign(r, {ch, full, net, netRate: r.ht > 0 ? net / r.ht * 100 : NaN}); }
+function suggestNet(cost, alc, netPct = netTarget()) { const ht = (cost + cpv()) / (1 - netPct / 100); return ceil10(ht * (alc ? 1.2 : 1.1)); }
+function minPrice(cost, alc) { return ceil10((cost + cpv()) * (alc ? 1.2 : 1.1)); }
+function realVolume() { // verres réellement vendus par mois, d'après les services clôturés
+  const h = (S.history || []).filter(x => !x.demo && x.qty > 0); if (h.length < 3) return null;
+  const t = h.map(x => +new Date(x.date)), days = Math.max(7, (Math.max(...t) - Math.min(...t)) / 864e5 + 1);
+  return Math.round(h.reduce((a, x) => a + x.qty, 0) / days * 30); }
 function prodCalc(p) { const tva = p.a ? .2 : .1, ht = p.s / (1 + tva), cost = pcost(p, p.d), marg = ht - cost;
-  return {tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc: !!p.a}; }
+  return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc: !!p.a}); }
 function cockCalc(k) { let cost = num(k.x), alc = false;
   k.ing.forEach(i => { const p = byId(i.p); if (p) { cost += pcost(p, i.cl); if (p.a) alc = true; } });
   const tva = alc ? .2 : .1, ht = k.s / (1 + tva), marg = ht - cost;
-  return {tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc}; }
+  return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc}); }
 function suggest(cost, alc, target) { const ht = cost / (1 - target / 100); return ceil10(ht * (alc ? 1.2 : 1.1)); }
 function status(c, p, t = S.target) {
+  if (chOn() && c.ht > 0 && c.net < 0) return ["À perte", "b-bad"];
   if (p && p.st < p.m) return ["Stock bas", "b-bad"];
   if (c.rate < t - 10) return ["Marge faible", "b-bad"];
   if (c.rate < t) return ["À ajuster", "b-warn"];
@@ -168,6 +185,7 @@ async function loadCloud() {
       history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres})),
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
     S.alias = et.alias_caisse || {};
+    try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
   }
   await refreshLive();
@@ -302,6 +320,11 @@ function importEstimate(list) {
     ca += unit * x.q; ht += h * x.q; marg += (h - i.c.cost) * x.q; qty += x.q; });
   return {ca, ht, marg, qty};
 }
+async function actCharges(c) {
+  if (cloud()) await q(c ? sb.from("etab_charges").upsert({etab_id: ETAB.id, data: c, maj: new Date().toISOString()})
+                         : sb.from("etab_charges").delete().eq("etab_id", ETAB.id));
+  S.ch = c;
+}
 async function actSettings(x) {
   if (cloud()) {
     await q(sb.from("etablissements").update({nom: x.bar || ETAB.nom, objectif_spiritueux: x.target, objectif_bouteilles: x.target2, volume_mois: x.vol}).eq("id", ETAB.id));
@@ -363,6 +386,7 @@ function renderHome() {
   $("tonight").querySelector("[data-go2]").onclick = () => go("service");
   const im = $("tonight").querySelector("[data-imp]"); if (im) im.onclick = importSheet;
 
+  renderCharges(d);
   const o = opportunities();
   $("oppTotal").textContent = o.length ? "+" + eur(o.reduce((s, i) => s + i.month, 0), 0) + " / mois" : "";
   $("opps").innerHTML = o.length ? o.slice(0, 4).map(i => `
@@ -404,11 +428,12 @@ function renderMenu() {
   let it = allItems().filter(i => i.kind === menuKind && i.o.n.toLowerCase().includes(qs) && (menuKind === "k" || cat === "Toutes" || i.o.c === cat));
   it.sort((a, b) => sortBy === "name" ? a.o.n.localeCompare(b.o.n) : sortBy === "rate" ? b.c.rate - a.c.rate : b.c.marg - a.c.marg);
   $("menuList").innerHTML = it.length ? it.map(i => { const t = tgtI(i), st = status(i.c, i.kind === "p" ? i.o : null, t);
-    const meta = i.kind === "p" ? `${f1(i.o.d)} cl · ${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}`
-      : `${i.o.ing.map(g => { const p = byId(g.p); return p ? p.n.split(" ")[0] : "?"; }).join(" + ")} · ${eur(i.o.s)}`;
+    const meta = (i.kind === "p" ? `${f1(i.o.d)} cl · ${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}`
+      : `${i.o.ing.map(g => { const p = byId(g.p); return p ? p.n.split(" ")[0] : "?"; }).join(" + ")} · ${eur(i.o.s)}`)
+      ;
     return `<div class="row tap" data-k="${i.key}"><div style="flex:none">${glass(i.c.rate / 100, {w:26, col:tone(i.c.rate, t)})}</div>
     <div class="grow"><div class="name">${esc(i.o.n)}</div><div class="meta">${esc(meta)}</div></div>
-    <div class="right"><div class="m h">${eur(i.c.marg)}</div><div style="font-size:12px;color:${tone(i.c.rate, t)};font-weight:600">${pct(i.c.rate)}</div><span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("")
+    <div class="right"><div class="m h">${eur(i.c.marg)}</div>${chOn() && i.c.ht > 0 ? `<div style="font-size:12px;font-weight:600;color:${i.c.net < 0 ? "var(--bad)" : i.c.netRate >= netTarget() ? "var(--ok)" : "var(--amber)"}">réel ${eur(i.c.net)}</div>` : `<div style="font-size:12px;color:${tone(i.c.rate, t)};font-weight:600">${pct(i.c.rate)}</div>`}<span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("")
     : `<div class="empty">${menuKind === "k" ? "Aucun cocktail. Touchez + pour créer votre première recette." : S.products.length ? "Aucun produit trouvé" : "Votre carte est vide. Touchez + pour ajouter votre premier produit."}</div>`;
   $("menuList").querySelectorAll("[data-k]").forEach(r => r.onclick = () => { const k = r.dataset.k; k[0] === "p" ? productSheet(k.slice(1)) : cocktailSheet(k.slice(1)); });
 }
@@ -522,7 +547,7 @@ function calcGlass() {
   $("cRes").innerHTML = `<div class="hl"><div><div class="l">Vous gagnez par verre (HT)</div><div class="v h">${eur(c.marg)}</div></div>${glass((c.rate || 0) / 100, {w:40, col:tone(c.rate)})}</div>
     <div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Prix de vente HT</div><div class="v h">${eur(c.ht)}</div></div>
     <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Coefficient</div><div class="v h">${isFinite(coef) ? "× " + coef.toFixed(1).replace(".", ",") : "—"}</div></div>
-    <div><div class="l">Verres par bouteille</div><div class="v h">${isFinite(gl) ? gl : "—"}</div></div><div><div class="l">Bouteille vendue (HT)</div><div class="v h">${isFinite(gl) ? eur(gl * c.ht, 0) : "—"}</div></div>`;
+    <div><div class="l">Verres par bouteille</div><div class="v h">${isFinite(gl) ? gl : "—"}</div></div><div><div class="l">Bouteille vendue (HT)</div><div class="v h">${isFinite(gl) ? eur(gl * c.ht, 0) : "—"}</div></div>${chBlock(c, !!cAlc)}`;
   $("cTip").innerHTML = !isFinite(c.rate) ? "Remplissez les champs." : c.rate >= S.target ? "Excellent : ce verre atteint votre objectif." : c.rate >= S.target - 10 ? `Correct, mais <b>${eur(suggest(c.cost, !!cAlc, S.target))}</b> vous mettrait à ${S.target} %.` : `Marge trop faible : <b>augmentez le prix ou réduisez la dose</b>.`;
   const t = +$("tRange").value; $("tLbl").textContent = t + " %"; $("tPrice").textContent = eur(suggest(c.cost, !!cAlc, t));
 }
@@ -812,8 +837,8 @@ function productSheet(id, preset) {
     const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T);
       $("fRes").innerHTML = `<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
       <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate, T)}">${pct(c.rate)}</div></div>
-      <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>`;
-      const u = $("useSg"); if (u) u.onclick = () => { $("fS").value = f1x(sg); upd(); }; };
+      <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>${chBlock(c, !!x.a, "fS", upd)}`;
+      const u = $("useSg"); if (u) u.onclick = () => { $("fS").value = f1x(sg); upd(); }; armCh("fS", upd); };
     $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
     $("fSave").onclick = async () => { const x = read();
       if (!x.n) return toast("Donnez un nom au produit");
@@ -846,7 +871,7 @@ function cocktailSheet(id) {
       const lines = x.ing.map(g => { const p = byId(g.p); return `${esc(p.n.split(" ")[0])} ${eur(pcost(p, g.cl))}`; }).join(" + ");
       $("kRes").innerHTML = `<div><div class="l">Coût du cocktail</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
        <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Prix conseillé (${S.target} %)</div><div class="v h">${eur(sg)}</div></div>
-       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>`; };
+       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${chBlock(c, c.alc, "kS", upd)}`; armCh("kS", upd); };
     drawIng(); upd(); ["kN","kS","kX"].forEach(i => $(i).oninput = upd);
     $("kAdd").onclick = () => { const u = S.products.find(p => !ing.some(g => g.p === p.id)) || S.products[0]; ing.push({p: u.id, cl: 2}); drawIng(); upd(); };
     $("kSave").onclick = async () => { const x = read();
@@ -856,6 +881,59 @@ function cocktailSheet(id) {
       if (await act(() => actSaveCocktail(id, x), id ? "Cocktail mis à jour ✓" : "Cocktail créé ✓")) closeSheet();
       else $("kSave").classList.remove("busy"); };
     if (id) armBtn($("kDel"), "Toucher encore pour supprimer", async () => { if (await act(() => actDeleteCocktail(id), "Cocktail supprimé")) closeSheet(); });
+  });
+}
+
+/* ================= Charges fixes ================= */
+function chBlock(c, alc, field, upd) {
+  if (!chOn() || !(c.ht > 0)) return "";
+  const sg = suggestNet(c.cost, alc), mn = minPrice(c.cost, alc), col = c.net < 0 ? "var(--bad)" : c.netRate >= netTarget() ? "var(--ok)" : "var(--amber)";
+  return `<div class="chsep" style="grid-column:1/-1">Avec vos charges fixes</div>
+    <div><div class="l">Charges par verre</div><div class="v h">${eur(c.ch)}</div></div><div><div class="l">Coût de revient réel</div><div class="v h">${eur(c.full)}</div></div>
+    <div><div class="l">Bénéfice réel par verre</div><div class="v h" style="color:${col}">${eur(c.net)}</div><div style="font-size:12px;color:${col};font-weight:600">${pct(c.netRate)}${c.net < 0 ? " · vendu à perte" : ""}</div></div>
+    <div><div class="l">Prix minimum TTC</div><div class="v h">${eur(mn)}</div></div>
+    <div style="grid-column:1/-1"><div class="l">Prix conseillé pour ${netTarget()} % de bénéfice réel</div><div class="v h">${eur(sg)}</div>${field && c.netRate < netTarget() ? `<button class="mini" data-usech="${sg}">Utiliser ce prix</button>` : ""}</div>`;
+}
+function armCh(field, upd) { document.querySelectorAll("[data-usech]").forEach(b => b.onclick = () => { $(field).value = f1x(+b.dataset.usech); upd(); }); }
+function renderCharges(d) {
+  const el = $("charges"); if (!el) return;
+  if (!chOn()) { el.innerHTML = `<div class="row"><div class="emoji">💶</div><div class="grow"><div class="name">Votre vrai bénéfice par verre</div><div class="meta" style="white-space:normal">Ajoutez loyer, salaires, énergie… pour savoir ce que chaque verre vous rapporte une fois tout payé.</div></div><button class="mini" id="chGo" style="flex:none">Ajouter</button></div>`;
+    $("chGo").onclick = chargesSheet; return; }
+  const tot = chTotal(), it = allItems().filter(i => i.c.ht > 0), loss = it.filter(i => i.c.net < 0);
+  const avgM = d.avgEur, need = avgM > 0 ? Math.ceil(tot / avgM) : NaN, vol = num(S.ch.v), res = vol * avgM - tot;
+  const avgNet = it.length ? it.reduce((s, i) => s + i.c.net, 0) / it.length : NaN;
+  el.innerHTML = `<div class="chgrid"><div><div class="l">Charges fixes</div><div class="v h">${eur(tot, 0)}<small> / mois</small></div></div>
+      <div><div class="l">Par verre vendu</div><div class="v h">${eur(cpv())}</div></div>
+      <div><div class="l">Bénéfice réel moyen</div><div class="v h" style="color:${avgNet < 0 ? "var(--bad)" : "var(--ok)"}">${eur(avgNet)}<small> / verre</small></div></div></div>
+    <p class="chline">${isFinite(need) ? `Il faut vendre environ <b>${need.toLocaleString("fr-FR")} verres par mois</b> pour payer vos charges. Vous en vendez environ ${vol.toLocaleString("fr-FR")} : ${res >= 0 ? `bénéfice estimé <b style="color:var(--ok)">${eur(res, 0)} / mois</b>` : `il manque <b style="color:var(--bad)">${eur(-res, 0)} / mois</b>`}.` : ""}
+    ${loss.length ? `<br><b style="color:var(--bad)">${loss.length} boisson${loss.length > 1 ? "s" : ""} vendue${loss.length > 1 ? "s" : ""} à perte</b> : ${loss.slice(0, 3).map(i => esc(i.o.n)).join(", ")}${loss.length > 3 ? "…" : ""}` : ""}</p>
+    <div class="chbtns">${loss.length ? `<button class="mini" id="chSee">Voir la carte</button>` : ""}<button class="mini ghostmini" id="chEdit">Modifier mes charges</button></div>`;
+  $("chEdit").onclick = chargesSheet; if ($("chSee")) $("chSee").onclick = () => { sortBy = "marg"; go("menu"); };
+}
+function chargesSheet() {
+  const c = Object.assign({v: "", net: 15}, S.ch || {}), real = realVolume();
+  openSheet(`<h2 class="h">Mes charges fixes</h2><div class="sub">Par mois, hors taxes. Elles sont réparties sur chaque verre vendu pour calculer votre bénéfice réel. Vos barmen ne les voient pas.</div>
+    ${CH_LINES.map(([k, l]) => `<div class="field"><label for="ch_${k}">${l}</label><div class="eurin"><input id="ch_${k}" inputmode="decimal" value="${f1x(c[k] ?? "")}" placeholder="0"><span>€</span></div>${k === "salaires" ? `<button type="button" class="link" id="chSal" style="padding:6px 0 0;font-size:12px">Calculer avec les heures de travail</button><div id="chSalBox" hidden class="two" style="margin-top:8px"><div class="field"><label for="chH">Heures par mois (toute l'équipe)</label><input id="chH" inputmode="decimal" placeholder="Ex : 300"></div><div class="field"><label for="chT">Coût horaire chargé (€)</label><input id="chT" inputmode="decimal" placeholder="Ex : 18"></div></div>` : ""}</div>`).join("")}
+    <div class="field"><label for="ch_v">Verres vendus par mois (toute la carte)</label><input id="ch_v" inputmode="decimal" value="${f1x(c.v)}" placeholder="Ex : 3000">
+      ${real ? `<button type="button" class="link" id="chReal" style="padding:6px 0 0;font-size:12px">Utiliser mes ventes réelles : environ ${real.toLocaleString("fr-FR")} verres par mois</button>` : `<div class="tip" style="padding:6px 0 0">Une estimation suffit pour commencer. Après quelques services, Dosis Bar vous proposera le vrai chiffre.</div>`}</div>
+    <div class="field"><label for="ch_net">Bénéfice réel visé : <b id="ch_netl" style="color:var(--amber2)">${num(c.net)} %</b></label><input id="ch_net" class="range" type="range" min="0" max="40" value="${num(c.net)}"></div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="chRes"></div></div>
+    <button class="btn" id="chSave">Enregistrer</button>${S.ch ? `<div class="gap"></div><button class="btn danger" id="chDel">Ne plus utiliser les charges</button>` : ""}`, () => {
+    const read = () => { const x = {v: num($("ch_v").value), net: +$("ch_net").value}; CH_LINES.forEach(([k]) => x[k] = num($("ch_" + k).value)); return x; };
+    const upd = () => { const x = read(), tot = chTotal(x), per = cpv(x), d = scoreData(), need = d.avgEur > 0 ? Math.ceil(tot / d.avgEur) : NaN;
+      $("ch_netl").textContent = x.net + " %";
+      $("chRes").innerHTML = `<div><div class="l">Total par mois</div><div class="v h">${eur(tot, 0)}</div></div><div><div class="l">Charges par verre</div><div class="v h">${per ? eur(per) : "—"}</div></div>
+        <div style="grid-column:1/-1"><div class="l">Seuil de rentabilité</div><div style="font-size:13px;margin-top:3px">${isFinite(need) && tot ? `${need.toLocaleString("fr-FR")} verres par mois pour payer vos charges` : "—"}</div></div>`; };
+    $("sBody").querySelectorAll("input").forEach(e => e.oninput = upd); upd();
+    $("chSal").onclick = () => { $("chSalBox").hidden = false; $("chH").focus(); };
+    const sal = () => { const h = num($("chH").value), t = num($("chT").value); if (h && t) { $("ch_salaires").value = f1x(Math.round(h * t)); upd(); } };
+    $("chH").oninput = sal; $("chT").oninput = sal;
+    if ($("chReal")) $("chReal").onclick = () => { $("ch_v").value = real; upd(); };
+    $("chSave").onclick = async () => { const x = read();
+      if (chTotal(x) > 0 && !(x.v > 0)) { toast("Indiquez combien de verres vous vendez par mois"); $("ch_v").focus(); return; }
+      $("chSave").classList.add("busy");
+      if (await act(() => actCharges(x), "Charges enregistrées ✓")) closeSheet(); else $("chSave").classList.remove("busy"); };
+    if ($("chDel")) armBtn($("chDel"), "Toucher encore pour confirmer", async () => { if (await act(() => actCharges(null), "Charges retirées")) closeSheet(); });
   });
 }
 
@@ -875,8 +953,10 @@ function settingsSheet() {
     <div class="field"><label for="sT">Objectif spiritueux et cocktails : <b id="sTl" style="color:var(--amber2)">${S.target} %</b></label><input id="sT" class="range" type="range" min="60" max="90" value="${S.target}"></div>
     <div class="field"><label for="sT2">Objectif bouteilles et canettes servies entières (bière, soft, eau) : <b id="sT2l" style="color:var(--amber2)">${S.target2 ?? 65} %</b></label><input id="sT2" class="range" type="range" min="40" max="85" value="${S.target2 ?? 65}"></div>
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
-    <button class="btn" id="sSave">Enregistrer</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn" id="sSave">Enregistrer</button>
+    <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     armAvis();
+    $("sCh").onclick = chargesSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
