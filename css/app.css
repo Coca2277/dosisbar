@@ -269,3 +269,5 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .eurin input{flex:1;min-width:0;width:auto}
 .cuing{grid-template-columns:1fr 66px 30px 34px}
 .cuu{font-size:12px;color:var(--mut);padding-bottom:14px;text-align:left}
+.cuadd{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;color:var(--amber2);font:inherit;font-weight:600;font-size:15px;padding:14px 4px;border-bottom:1px solid var(--line);text-align:left}
+.cuadd span{width:30px;height:30px;border-radius:10px;background:var(--amber);color:#1a1208;display:grid;place-items:center;font-size:20px;line-height:1;flex:none}

@@ -987,7 +987,9 @@ function renderCuisine() {
       <div class="right"><div class="m h">${eur(real)}</div><div class="meta" style="margin:0">réel / ${u[2]}</div></div></div>`; }).join("");
   const empty = {d: c.i.length ? "Aucun plat. Touchez + pour créer votre première fiche." : "Commencez par ajouter vos ingrédients (onglet Ingrédients), puis créez vos plats.",
     r: "Aucune préparation. Une sauce, une pâte, des frites maison : préparez-les une fois, utilisez-les dans plusieurs plats.", i: "Aucun ingrédient. Touchez + pour ajouter le premier, avec son prix d'achat."}[cuTab];
-  $("menuList").innerHTML = html || `<div class="empty">${qs ? "Rien trouvé" : empty}</div>`;
+  const addLbl = {d: "Ajouter un plat", r: "Ajouter une préparation", i: "Ajouter un ingrédient"}[cuTab];
+  $("menuList").innerHTML = `<button class="cuadd" id="cuAdd"><span>+</span>${addLbl}</button>` + (html || `<div class="empty">${qs ? "Rien trouvé" : empty}</div>`);
+  $("cuAdd").onclick = () => $("fab").onclick();
   $("menuList").querySelectorAll("[data-id]").forEach(r => r.onclick = () => ({d: platSheet, r: prepSheet, i: ingSheet})[cuTab](r.dataset.id));
 }
 function ingSheet(id) {
