@@ -158,7 +158,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:8px 18px}
 .ardoise{display:grid;grid-template-columns:repeat(3,1fr);max-width:1000px;margin:0 auto;text-align:left;background:rgba(20,17,15,.55);border:1px solid var(--ligne);border-radius:22px;overflow:hidden}
 .formule{padding:30px 28px 32px;display:flex;flex-direction:column;gap:14px}
 .formule + .formule{border-left:1px solid var(--ligne)}
-.formule.pilote{background:linear-gradient(180deg,rgba(232,163,61,.14),rgba(232,163,61,.03));box-shadow:inset 0 3px 0 var(--ambre)}
+.formule.pilote{background:linear-gradient(180deg,rgba(232,163,61,.14),rgba(232,163,61,.03))}
 .formule .nom{font-weight:700;font-size:18px;display:flex;align-items:center;gap:10px}
 .bientot{font-size:13px;font-weight:600;color:var(--miel);border:1px solid rgba(232,163,61,.45);border-radius:99px;padding:3px 10px}
 .tarif{font-size:clamp(40px,4vw,52px);font-weight:800;line-height:1;color:var(--creme);font-variant-numeric:tabular-nums}
