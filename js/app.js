@@ -126,6 +126,10 @@ function status(c, p, t = S.target) {
 }
 /* ================= Restauration : calculs ================= */
 const CU_U = {kg: ["g", 1000, "kg"], L: ["cl", 100, "L"], pce: ["pce", 1, "pièce"]};
+const BUY_U = {kg: ["kg", 1, "kg"], g: ["kg", 1000, "g"], L: ["L", 1, "L"], cl: ["L", 100, "cl"], ml: ["L", 1000, "ml"], pce: ["pce", 1, "pièces"]};
+function buyInfo(o) { // quantité et prix tels qu'achetés → prix par kg / L / pièce
+  const ua = BUY_U[o.ua] ? o.ua : (o.u || "kg"), qa = num(o.qa) > 0 ? num(o.qa) : 1, pa = o.pa != null && o.pa !== "" ? num(o.pa) : num(o.prix);
+  const b = BUY_U[ua], base = qa / b[1]; return {ua, qa, pa, u: b[0], prix: base > 0 ? pa / base : 0}; }
 const CU_CATS = {"Entrée":"🥗","Plat":"🍽️","Dessert":"🍰","Burger, sandwich":"🍔","Pizza":"🍕","Accompagnement":"🍟","Planche, tapas":"🧀","Menu, formule":"🍱","Autre":"🍴"};
 const cu = () => S.cu || (S.cu = {i: [], r: [], d: []});
 const restoOn = () => !!(S.resto && S.resto.on);
@@ -151,7 +155,8 @@ function seedCuisine() {
     ["Bœuf haché 15 %","kg",13.9,0],["Pain burger brioché","pce",0.42,0],["Cheddar en tranches","pce",0.16,0],["Tomate","kg",2.9,10],
     ["Salade iceberg","pce",1.1,30],["Pommes de terre","kg",1.1,20],["Huile de friture","L",2.6,0],["Crème fraîche","L",4.2,0],
     ["Oignon","kg",1.4,15],["Citron","pce",0.35,0],["Poulet (filets)","kg",9.8,5],["Parmesan","kg",18,0]];
-  const i = I.map(([n, u, prix, perte], k) => ({id: "ci" + (t + k), n, u, prix, perte}));
+  const Q = {"Bœuf haché 15 %":5,"Pain burger brioché":48,"Cheddar en tranches":84,"Tomate":6,"Salade iceberg":12,"Pommes de terre":25,"Huile de friture":10,"Crème fraîche":2,"Oignon":5,"Citron":30,"Poulet (filets)":2.5,"Parmesan":1};
+  const i = I.map(([n, u, prix, perte], k) => ({id: "ci" + (t + k), n, u, prix, perte, qa: Q[n] || 1, ua: u, pa: Math.round(prix * (Q[n] || 1) * 100) / 100}));
   const id = n => i.find(x => x.n === n).id;
   const r = [
     {id: "cr" + t, n: "Frites maison", rend: 800, ru: "g", lines: [{t:"i",id:id("Pommes de terre"),q:1000},{t:"i",id:id("Huile de friture"),q:8}]},
@@ -965,8 +970,9 @@ function renderCuisine() {
   else if (cuTab === "r") html = list.map(r => { const u = r.ru || "g", per = cuUnitCost("r", r.id), big = u === "g" ? ["kg", 1000] : u === "cl" ? ["L", 100] : ["pièce", 1];
     return `<div class="row tap" data-id="${esc(r.id)}"><div class="emoji">🥣</div><div class="grow"><div class="name">${esc(r.n)}</div><div class="meta">Rend ${f1(num(r.rend))} ${u} · ${(r.lines || []).length} ingrédient${(r.lines || []).length > 1 ? "s" : ""}</div></div>
       <div class="right"><div class="m h">${eur(per * big[1])}</div><div class="meta" style="margin:0">par ${big[0]}</div></div></div>`; }).join("");
-  else html = list.slice().sort((a, b) => a.n.localeCompare(b.n)).map(i => { const u = CU_U[i.u] || CU_U.kg, real = cuUnitCost("i", i.id) * u[1];
-    return `<div class="row tap" data-id="${esc(i.id)}"><div class="emoji">🧺</div><div class="grow"><div class="name">${esc(i.n)}</div><div class="meta">${eur(num(i.prix))} HT / ${u[2]}${num(i.perte) ? " · perte " + f1(num(i.perte)) + " %" : ""}</div></div>
+  else html = list.slice().sort((a, b) => a.n.localeCompare(b.n)).map(i => { const u = CU_U[i.u] || CU_U.kg, real = cuUnitCost("i", i.id) * u[1], bi = buyInfo(i);
+    const bought = num(i.qa) > 0 ? `${f1(bi.qa)} ${bi.ua === "pce" && bi.qa <= 1 ? "pièce" : BUY_U[bi.ua][2]} pour ${eur(bi.pa)} HT` : `${eur(num(i.prix))} HT / ${u[2]}`;
+    return `<div class="row tap" data-id="${esc(i.id)}"><div class="emoji">🧺</div><div class="grow"><div class="name">${esc(i.n)}</div><div class="meta">${bought}${num(i.perte) ? " · perte " + f1(num(i.perte)) + " %" : ""}</div></div>
       <div class="right"><div class="m h">${eur(real)}</div><div class="meta" style="margin:0">réel / ${u[2]}</div></div></div>`; }).join("");
   const empty = {d: c.i.length ? "Aucun plat. Touchez + pour créer votre première fiche." : "Commencez par ajouter vos ingrédients (onglet Ingrédients), puis créez vos plats.",
     r: "Aucune préparation. Une sauce, une pâte, des frites maison : préparez-les une fois, utilisez-les dans plusieurs plats.", i: "Aucun ingrédient. Touchez + pour ajouter le premier, avec son prix d'achat."}[cuTab];
@@ -974,21 +980,26 @@ function renderCuisine() {
   $("menuList").querySelectorAll("[data-id]").forEach(r => r.onclick = () => ({d: platSheet, r: prepSheet, i: ingSheet})[cuTab](r.dataset.id));
 }
 function ingSheet(id) {
-  const o = id ? cuFind("i", id) : {n: "", u: "kg", prix: "", perte: 0};
-  openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouvel ingrédient"}</h2><div class="sub">Prix d'achat hors taxes, tel qu'il est sur la facture</div>
+  const o0 = id ? cuFind("i", id) : null, bi = o0 ? buyInfo(o0) : {ua: "kg", qa: 1, pa: ""};
+  const o = o0 || {n: "", perte: 0};
+  openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouvel ingrédient"}</h2><div class="sub">Comme sur la facture : la quantité achetée et le prix payé hors taxes</div>
     <div class="field"><label for="iN">Nom</label><input id="iN" value="${esc(o.n)}" placeholder="Ex : Bœuf haché 15 %" maxlength="80"></div>
-    <div class="two"><div class="field"><label for="iU">Acheté au</label><select id="iU">${opts([["kg","Kilo"],["L","Litre"],["pce","À la pièce"]], o.u)}</select></div>
-    <div class="field"><label for="iP" id="iPl">Prix HT par kilo (€)</label><input id="iP" inputmode="decimal" value="${f1x(o.prix)}"></div></div>
+    <div class="two"><div class="field"><label for="iQ">Quantité achetée</label><input id="iQ" inputmode="decimal" value="${f1x(bi.qa)}" placeholder="Ex : 5"></div>
+    <div class="field"><label for="iU">Unité</label><select id="iU">${opts([["kg","kilos (kg)"],["g","grammes (g)"],["L","litres (L)"],["cl","centilitres (cl)"],["ml","millilitres (ml)"],["pce","pièces"]], bi.ua)}</select></div></div>
+    <div class="field"><label for="iP">Prix payé HT pour cette quantité (€)</label><input id="iP" inputmode="decimal" value="${f1x(bi.pa)}" placeholder="Ex : 69,50"></div>
     <div class="field"><label for="iL">Perte à la préparation : <b id="iLl" style="color:var(--amber2)">${f1(num(o.perte))} %</b></label><input id="iL" class="range" type="range" min="0" max="70" step="1" value="${num(o.perte)}">
       <div class="tip" style="padding:6px 0 0">Épluchage, parage, cuisson… Ex : pommes de terre 20 %, salade 30 %.</div></div>
     <div class="card" style="background:var(--card2)"><div class="res" id="iRes"></div></div>
     <button class="btn" id="iSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="iDel">Supprimer cet ingrédient</button>` : ""}`, () => {
-    const read = () => ({n: $("iN").value.trim(), u: $("iU").value, prix: num($("iP").value), perte: +$("iL").value});
-    const upd = () => { const x = read(), u = CU_U[x.u], real = x.prix / (1 - x.perte / 100);
-      $("iPl").textContent = `Prix HT par ${u[2]} (€)`; $("iLl").textContent = x.perte + " %";
-      $("iRes").innerHTML = `<div><div class="l">Coût réel par ${u[2]}</div><div class="v h">${eur(real)}</div></div><div><div class="l">Coût par ${u[0]}</div><div class="v h">${eur(real / u[1], u[1] > 1 ? 4 : 2)}</div></div>`; };
+    const read = () => { const x = {n: $("iN").value.trim(), qa: num($("iQ").value), ua: $("iU").value, pa: num($("iP").value), perte: +$("iL").value}, b = buyInfo(x);
+      return {...x, u: b.u, prix: Math.round(b.prix * 10000) / 10000}; };
+    const upd = () => { const x = read(), u = CU_U[x.u], real = x.prix / (1 - x.perte / 100); $("iLl").textContent = x.perte + " %";
+      $("iRes").innerHTML = `<div><div class="l">Prix d'achat par ${u[2]}</div><div class="v h">${eur(x.prix)}</div></div><div><div class="l">Coût réel par ${u[2]}${x.perte ? " (après perte)" : ""}</div><div class="v h">${eur(real)}</div></div>
+        <div style="grid-column:1/-1"><div class="l">Dans vos plats</div><div style="font-size:13px;margin-top:3px">${u[1] === 1000 ? `100 g coûtent ${eur(real / 10)}` : u[1] === 100 ? `10 cl coûtent ${eur(real / 10)}` : `1 pièce coûte ${eur(real)}`}</div></div>`; };
     $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
     $("iSave").onclick = async () => { const x = read(); if (!x.n) return toast("Donnez un nom à l'ingrédient");
+      if (!(x.qa > 0)) { toast("Indiquez la quantité achetée"); return $("iQ").focus(); }
+      if (!(x.pa > 0)) { toast("Indiquez le prix payé"); return $("iP").focus(); }
       $("iSave").classList.add("busy");
       if (await act(() => actSaveCu("i", id, x), id ? "Ingrédient mis à jour ✓" : "Ingrédient ajouté ✓")) closeSheet(); else $("iSave").classList.remove("busy"); };
     if (id) armBtn($("iDel"), "Toucher encore : il sera retiré des recettes", async () => { if (await act(() => actDeleteCu("i", id), "Ingrédient supprimé")) closeSheet(); });
