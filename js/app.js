@@ -23,7 +23,7 @@ const SAMPLE_P = [
   {n:"Gin Botanique",c:"Gin",a:1,b:22,cap:70,d:4,s:9,st:4,m:2},
   {n:"Vodka Nordik",c:"Vodka",a:1,b:16,cap:70,d:4,s:6.5,st:1,m:2},
   {n:"Pastis Provence",c:"Anisé",a:1,b:14,cap:100,d:2,s:4,st:6,m:2},
-  {n:"Bière Artisanale Blonde",c:"Bière",a:1,b:2.4,cap:33,d:33,s:6,st:24,m:24},
+  {n:"Bière Artisanale Blonde",c:"Bière",a:1,b:2.4,cap:33,d:33,s:6,st:24,m:24,al:["gluten"]},
   {n:"Coca-Cola 33cl",c:"Soft",a:0,b:0.9,cap:33,d:33,s:4.5,st:48,m:24},
   {n:"Jus d'orange pressé",c:"Jus",a:0,b:3.2,cap:100,d:20,s:4.5,st:6,m:3},
   {n:"Sirop de Grenadine",c:"Sirop",a:0,b:6,cap:100,d:3,s:2.5,st:3,m:1},
@@ -124,6 +124,37 @@ function status(c, p, t = S.target) {
   if (c.rate < t) return ["À ajuster", "b-warn"];
   return ["Rentable", "b-ok"];
 }
+/* ================= Zones de prix, pertes, allergènes ================= */
+const ZONES = [["comptoir","Comptoir"],["salle","Salle"],["terrasse","Terrasse"],["hh","Happy hour"]];
+const LOSS = {offert: ["Offert", "🎁"], casse: ["Casse", "💥"], perso: ["Repas du personnel", "🍽️"], jete: ["Produit jeté", "🗑️"], autre: ["Autre perte", "➖"]};
+const SVC_LOSS = ["offert", "casse", "perso"];
+const isLoss = z => SVC_LOSS.includes(z);
+const zoneRules = () => (S.opts && S.opts.zones) || {};
+const zoneOn = z => z === "comptoir" || !!(zoneRules()[z] && zoneRules()[z].on);
+function zonePrice(base, z) {
+  if (isLoss(z)) return 0; if (z === "comptoir") return base;
+  const r = zoneRules()[z]; if (!r || !r.on) return base;
+  const sg = z === "hh" ? -1 : 1, v = num(r.v);
+  return Math.max(0, Math.round((r.t === "pct" ? base * (1 + sg * v / 100) : base + sg * v) * 100) / 100);
+}
+const zoneLabel = z => (ZONES.find(x => x[0] === z) || [z, (LOSS[z] || [z])[0]])[1];
+const liveSplit = lk => { const i = lk.indexOf("@"); return i < 0 ? [lk, "comptoir"] : [lk.slice(0, i), lk.slice(i + 1)]; };
+const liveTotal = key => Object.entries(S.live || {}).reduce((t, [lk, n]) => liveSplit(lk)[0] === key ? t + n : t, 0);
+function liveNorm() { const L = {}; for (const k in S.live || {}) { const [a, z] = liveSplit(k); L[a + "@" + z] = (L[a + "@" + z] || 0) + S.live[k]; } S.live = L; }
+const ALG = [["gluten","Gluten"],["crustaces","Crustacés"],["oeufs","Œufs"],["poissons","Poissons"],["arachides","Arachides"],["soja","Soja"],["lait","Lait"],
+  ["fruits_coque","Fruits à coque"],["celeri","Céleri"],["moutarde","Moutarde"],["sesame","Sésame"],["sulfites","Sulfites"],["lupin","Lupin"],["mollusques","Mollusques"]];
+const algName = k => (ALG.find(a => a[0] === k) || [k, k])[1];
+function algChips(sel) { return `<div class="algs" id="algBox">${ALG.map(([k, l]) => `<button type="button" class="chip ${sel.includes(k) ? "on" : ""}" data-al="${k}" aria-pressed="${sel.includes(k)}">${l}</button>`).join("")}</div>`; }
+function algRead() { return [...document.querySelectorAll("#algBox [data-al].on")].map(b => b.dataset.al); }
+function algArm(cb) { document.querySelectorAll("#algBox [data-al]").forEach(b => b.onclick = () => { b.classList.toggle("on"); b.setAttribute("aria-pressed", b.classList.contains("on")); if (cb) cb(); }); }
+function linesAlg(lines, seen = new Set()) { const out = new Set();
+  (lines || []).forEach(l => { const o = cuFind(l.t, l.id); if (!o) return;
+    if (l.t === "i") (o.al || []).forEach(a => out.add(a));
+    else if (!seen.has(o.id)) { seen.add(o.id); linesAlg(o.lines, seen).forEach(a => out.add(a)); } });
+  return [...out]; }
+const cockAlg = k => [...new Set(k.ing.flatMap(g => (byId(g.p) || {}).al || []))];
+const algText = a => a.length ? a.map(algName).join(", ") : "Aucun allergène déclaré";
+
 /* ================= Restauration : calculs ================= */
 const CU_U = {kg: ["g", 1000, "kg"], L: ["cl", 100, "L"], pce: ["pce", 1, "pièce"]};
 const BUY_U = {kg: ["kg", 1, "kg"], g: ["kg", 1000, "g"], L: ["L", 1, "L"], cl: ["L", 100, "cl"], ml: ["L", 1000, "ml"], pce: ["pce", 1, "pièces"]};
@@ -156,7 +187,8 @@ function seedCuisine() {
     ["Salade iceberg","pce",1.1,30],["Pommes de terre","kg",1.1,20],["Huile de friture","L",2.6,0],["Crème fraîche","L",4.2,0],
     ["Oignon","kg",1.4,15],["Citron","pce",0.35,0],["Poulet (filets)","kg",9.8,5],["Parmesan","kg",18,0]];
   const Q = {"Bœuf haché 15 %":5,"Pain burger brioché":48,"Cheddar en tranches":84,"Tomate":6,"Salade iceberg":12,"Pommes de terre":25,"Huile de friture":10,"Crème fraîche":2,"Oignon":5,"Citron":30,"Poulet (filets)":2.5,"Parmesan":1};
-  const i = I.map(([n, u, prix, perte], k) => ({id: "ci" + (t + k), n, u, prix, perte, qa: Q[n] || 1, ua: u, pa: Math.round(prix * (Q[n] || 1) * 100) / 100}));
+  const AL = {"Pain burger brioché":["gluten","oeufs","lait","sesame"],"Cheddar en tranches":["lait"],"Crème fraîche":["lait"],"Parmesan":["lait"]};
+  const i = I.map(([n, u, prix, perte], k) => ({id: "ci" + (t + k), n, u, prix, perte, qa: Q[n] || 1, ua: u, pa: Math.round(prix * (Q[n] || 1) * 100) / 100, al: AL[n] || []}));
   const id = n => i.find(x => x.n === n).id;
   const r = [
     {id: "cr" + t, n: "Frites maison", rend: 800, ru: "g", lines: [{t:"i",id:id("Pommes de terre"),q:1000},{t:"i",id:id("Huile de friture"),q:8}]},
@@ -204,8 +236,8 @@ function bottle(level, col) { const id = "bt" + (++gid), l = Math.max(0, Math.mi
   return `<svg width="30" height="38" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="${id}"><path d="${BOTTLE}"/></clipPath></defs><g clip-path="url(#${id})"><rect width="40" height="50" fill="rgba(244,237,228,.05)"/><rect x="0" y="${y}" width="40" height="50" fill="${col}"/></g><path d="${BOTTLE}" fill="none" stroke="rgba(244,237,228,.4)" stroke-width="1.6" stroke-linejoin="round"/></svg>`; }
 
 /* ================= Base en ligne : lecture ================= */
-const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||""});
-const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,
+const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[]});
+const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,allergenes:p.al||[],
   prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString()});
 async function q(promise) { const r = await promise; if (r.error) throw r.error; return r.data; }
 let lastLoad = 0;
@@ -213,23 +245,27 @@ async function loadCloud() {
   const e = ETAB.id;
   if (isBarman()) {
     const carte = await q(sb.rpc("carte_service", {p_etab: e}));
+    try { const eo = await q(sb.from("etablissements").select("options").eq("id", e).single()); S.opts = eo.options || {}; } catch (x) { S.opts = S.opts || {}; }
     S.carte = carte.map(r => ({key: r.item_type + r.item_id, kind: r.item_type, n: r.nom, c: r.categorie, s: +r.prix_ttc, dispo: r.disponible}));
   } else {
     const [et, pr, ck, sv, inv] = await Promise.all([
       q(sb.from("etablissements").select("*").eq("id", e).single()),
       q(sb.from("produits").select("*").eq("etab_id", e).order("nom")),
       q(sb.from("cocktails").select("*").eq("etab_id", e).order("nom")),
-      q(sb.from("services").select("ouvert_le,ca_ttc,marge_ht,verres").eq("etab_id", e).not("clos_le", "is", null).order("ouvert_le", {ascending: false}).limit(14)),
+      q(sb.from("services").select("ouvert_le,ca_ttc,marge_ht,verres,pertes").eq("etab_id", e).not("clos_le", "is", null).order("ouvert_le", {ascending: false}).limit(14)),
       q(sb.from("inventaires").select("le,perte_ventes_ht").eq("etab_id", e).order("le", {ascending: false}).limit(1))]);
     const ci = ck.length ? await q(sb.from("cocktail_ingredients").select("cocktail_id,produit_id,cl").in("cocktail_id", ck.map(c => c.id))) : [];
     Object.assign(S, {bar: et.nom, target: et.objectif_spiritueux, target2: et.objectif_bouteilles, vol: et.volume_mois,
       products: pr.map(fromDbP),
       cocktails: ck.map(c => ({id:c.id,n:c.nom,s:+c.prix_vente_ttc,x:+c.extras_ht,
         ing: ci.filter(i => i.cocktail_id === c.id).map(i => ({p:i.produit_id,cl:+i.cl}))})),
-      history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres})),
+      history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres,pertes:s.pertes||null})),
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
     S.alias = et.alias_caisse || {};
     S.opts = et.options || {}; S.resto = S.opts.resto || null;
+    try { const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0);
+      S.pertes = (await q(sb.from("pertes").select("id,le,type,libelle,qte,unite,cout_ht").eq("etab_id", e).gte("le", m0.toISOString()).order("le", {ascending: false})))
+        .map(x => ({id: x.id, le: x.le, type: x.type, n: x.libelle, q: +x.qte, u: x.unite, c: +x.cout_ht})); } catch (x) { S.pertes = S.pertes || []; }
     try { const cr = await q(sb.from("cuisine").select("id,type,data").eq("etab_id", e));
       S.cu = {i: [], r: [], d: []}; cr.forEach(x => (S.cu[x.type] || []).push({...x.data, id: x.id})); } catch (x) { S.cu = S.cu || {i: [], r: [], d: []}; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
@@ -241,7 +277,7 @@ async function loadCloud() {
 async function refreshLive() {
   if (MODE !== "cloud" || queueLen()) return;
   const r = await q(sb.rpc("service_en_cours", {p_etab: ETAB.id}));
-  S.live = r.items || {};
+  S.live = r.items_z || r.items || {}; liveNorm();
 }
 async function bgReload() {
   if (MODE !== "cloud" || !navigator.onLine || Date.now() - lastLoad < 20000) return;
@@ -260,7 +296,7 @@ async function flush() {
     while (Q.length) {
       const it = Q[0];
       try {
-        await q(sb.rpc("vendre", {p_etab: it.e, p_type: it.t, p_id: it.id, p_delta: it.d}));
+        await q(sb.rpc("vendre2", {p_etab: it.e, p_type: it.t, p_id: it.id, p_delta: it.d, p_zone: it.z || "comptoir"}));
       } catch (e) {
         if (isNetErr(e)) { setSync("off"); break; }
         toast(frErr(e));               // erreur métier : on abandonne cette vente
@@ -296,7 +332,7 @@ async function actDeleteProduct(id) {
   if (cloud()) await q(sb.from("produits").delete().eq("id", id));
   S.products = S.products.filter(x => x.id !== id);
   S.cocktails.forEach(k => k.ing = k.ing.filter(g => g.p !== id));
-  delete S.live["p" + id];
+  for (const k in S.live) if (liveSplit(k)[0] === "p" + id) delete S.live[k];
 }
 async function actSaveCocktail(id, x) {
   if (cloud()) {
@@ -311,7 +347,7 @@ async function actSaveCocktail(id, x) {
 }
 async function actDeleteCocktail(id) {
   if (cloud()) await q(sb.from("cocktails").delete().eq("id", id));
-  S.cocktails = S.cocktails.filter(c => c.id !== id); delete S.live["k" + id];
+  S.cocktails = S.cocktails.filter(c => c.id !== id); for (const k in S.live) if (liveSplit(k)[0] === "k" + id) delete S.live[k];
 }
 async function actSetPrices(list) { // [{kind, o, price}]
   if (cloud()) for (const it of list)
@@ -380,10 +416,25 @@ async function actDeleteCu(t, id) {
   const c = cu(); c[t] = c[t].filter(o => o.id !== id);
   [...c.r, ...c.d].forEach(o => o.lines = (o.lines || []).filter(l => !(l.t === t && l.id === id)));
 }
+async function actOpts(patch) {
+  const o = {...(S.opts || {}), ...patch};
+  if (cloud()) await q(sb.from("etablissements").update({options: o}).eq("id", ETAB.id));
+  S.opts = o;
+}
 async function actResto(r) {
-  if (cloud()) { const o = {...(S.opts || {}), resto: r}; await q(sb.from("etablissements").update({options: o}).eq("id", ETAB.id)); S.opts = o; }
+  await actOpts({resto: r});
   S.resto = r;
   if (r && r.on && MODE === "demo" && !(cu().i.length || cu().d.length)) S.cu = seedCuisine();
+}
+async function actPerte(x) { // {type, n, q, u, c, stock:{id, st}}
+  let id = "d" + Date.now();
+  if (cloud()) id = (await q(sb.from("pertes").insert({etab_id: ETAB.id, type: x.type, libelle: x.n.slice(0, 120), qte: x.q, unite: x.u, cout_ht: Math.round(x.c * 100) / 100, par: ME.id}).select("id").single())).id;
+  (S.pertes = S.pertes || []).unshift({id, le: new Date().toISOString(), type: x.type, n: x.n, q: x.q, u: x.u, c: x.c});
+  if (x.stock) actStock(x.stock.id, x.stock.st);
+}
+async function actDeletePerte(id) {
+  if (cloud()) await q(sb.from("pertes").delete().eq("id", id));
+  S.pertes = (S.pertes || []).filter(x => x.id !== id);
 }
 async function actCharges(c) {
   if (cloud()) await q(c ? sb.from("etab_charges").upsert({etab_id: ETAB.id, data: c, maj: new Date().toISOString()})
@@ -431,14 +482,17 @@ function render() {
 
 /* ================= Accueil ================= */
 function liveTotals() {
-  let ca = 0, ht = 0, marg = 0, qty = 0;
-  for (const k in S.live) {
-    const qn = S.live[k]; if (!qn) continue;
-    if (isBarman()) { const c = (S.carte || []).find(x => x.key === k); if (c) { ca += qn * c.s; qty += qn; } continue; }
+  let ca = 0, ht = 0, marg = 0, qty = 0, pertes = 0; const loss = {};
+  for (const lk in S.live) {
+    const qn = S.live[lk]; if (!qn) continue; const [k, z] = liveSplit(lk), L = isLoss(z);
+    if (isBarman()) { const c = (S.carte || []).find(x => x.key === k); if (!c) continue;
+      if (L) { (loss[z] = loss[z] || {n: 0, c: 0}).n += qn; } else { ca += qn * zonePrice(c.s, z); qty += qn; } continue; }
     const i = allItems().find(x => x.key === k); if (!i) continue;
-    ca += qn * i.o.s; ht += qn * i.c.ht; marg += qn * i.c.marg; qty += qn;
+    const price = zonePrice(i.o.s, z), h = price / (1 + i.c.tva);
+    ca += qn * price; ht += qn * h; marg += qn * (h - i.c.cost);
+    if (L) { pertes += qn * i.c.cost; const e = (loss[z] = loss[z] || {n: 0, c: 0}); e.n += qn; e.c += qn * i.c.cost; } else qty += qn;
   }
-  return {ca, ht, marg, qty};
+  return {ca, ht, marg, qty, pertes, loss};
 }
 function renderHome() {
   const h = new Date().getHours();
@@ -462,7 +516,7 @@ function renderHome() {
   $("tonight").querySelector("[data-go2]").onclick = () => go("service");
   const im = $("tonight").querySelector("[data-imp]"); if (im) im.onclick = importSheet;
 
-  renderCharges(d);
+  renderCharges(d); renderPertes();
   const o = opportunities();
   $("oppTotal").textContent = o.length ? "+" + eur(o.reduce((s, i) => s + i.month, 0), 0) + " / mois" : "";
   $("opps").innerHTML = o.length ? o.slice(0, 4).map(i => `
@@ -544,28 +598,42 @@ function renderService() {
   $("sCA").textContent = barman ? t.qty : eur(t.ca, 0);
   $("sQty").textContent = t.qty;
   $("importBtn").hidden = barman;
-  $("svcLive").style.visibility = t.qty ? "visible" : "hidden";
+  $("svcLive").style.visibility = t.qty || Object.keys(t.loss).length ? "visible" : "hidden";
+  if (!zoneOn(S.zone) && !isLoss(S.zone)) S.zone = "comptoir";
+  const zs = ZONES.filter(([k]) => zoneOn(k));
+  $("svcZones").innerHTML = (zs.length > 1 ? zs.map(([k, l]) => `<button class="chip ${S.zone === k ? "on" : ""}" data-z="${k}">${l}</button>`).join("") + `<span class="zsep"></span>` : "")
+    + SVC_LOSS.map(k => `<button class="chip loss ${S.zone === k ? "on" : ""}" data-z="${k}">${LOSS[k][1]} ${k === "perso" ? "Personnel" : LOSS[k][0]}</button>`).join("");
+  $("svcZones").querySelectorAll("[data-z]").forEach(b => b.onclick = () => { S.zone = S.zone === b.dataset.z && isLoss(b.dataset.z) ? "comptoir" : b.dataset.z; lsSet("dosisbar.zone", S.zone); renderService(); });
+  const lossN = Object.values(t.loss).reduce((a, x) => a + x.n, 0);
+  $("svcMode").hidden = !isLoss(S.zone) && !lossN;
+  $("svcMode").className = "svcmode" + (isLoss(S.zone) ? " on" : "");
+  $("svcMode").innerHTML = isLoss(S.zone) ? `<b>Mode ${LOSS[S.zone][0].toLowerCase()}</b> : chaque verre touché est noté ${S.zone === "offert" ? "offert" : S.zone === "casse" ? "cassé" : "pour le personnel"}, à 0 €. Le stock baisse. <button class="link" id="svcBack">Revenir aux ventes</button>`
+    : `${lossN} offert${lossN > 1 ? "s" : ""} ou perte${lossN > 1 ? "s" : ""} ce soir${barman ? "" : " · " + eur(t.pertes) + " de marchandise"}`;
+  if ($("svcBack")) $("svcBack").onclick = () => { S.zone = "comptoir"; lsSet("dosisbar.zone", S.zone); renderService(); };
   const items = serviceItems();
   const cats = ["Tout", ...new Set(items.map(i => i.c))];
   if (!cats.includes(svcCat)) svcCat = "Tout";
   $("svcChips").innerHTML = cats.map(c => `<button class="chip ${svcCat === c ? "on" : ""}" data-c="${esc(c)}">${esc(c)}</button>`).join("");
   $("svcChips").querySelectorAll(".chip").forEach(b => b.onclick = () => { svcCat = b.dataset.c; renderService(); });
   const list = items.filter(i => svcCat === "Tout" || i.c === svcCat);
-  $("tiles").innerHTML = list.length ? list.map(i => { const qn = S.live[i.key] || 0;
+  $("tiles").classList.toggle("lossmode", isLoss(S.zone));
+  $("tiles").innerHTML = list.length ? list.map(i => { const qn = liveTotal(i.key);
     return `<div class="tile ${qn ? "has" : ""} ${i.out ? "out" : ""}" data-k="${i.key}" role="button" tabindex="0" aria-label="${esc(i.n)}">
       <button class="minus" data-m="1" aria-label="Retirer un ${esc(i.n)}">−</button><span class="q">${qn}</span>
-      <div class="e">${i.kind === "k" ? "🍹" : CATS[i.c] || "🍶"}</div><div class="t">${esc(i.n)}</div><div class="p">${eur(i.s)}</div></div>`; }).join("")
+      <div class="e">${i.kind === "k" ? "🍹" : CATS[i.c] || "🍶"}</div><div class="t">${esc(i.n)}</div><div class="p">${isLoss(S.zone) ? "0 €" : eur(zonePrice(i.s, S.zone))}</div></div>`; }).join("")
     : `<div class="empty" style="grid-column:1/-1">La carte est vide.${barman ? " Le patron doit d'abord ajouter les produits." : " Ajoutez vos produits dans l'onglet Carte."}</div>`;
   $("tiles").querySelectorAll(".tile").forEach(el => el.onclick = e => tap(el.dataset.k, e.target.dataset.m ? -1 : 1));
 }
 function tap(k, dir) {
-  if (dir < 0 && !S.live[k]) return;
-  S.live[k] = (S.live[k] || 0) + dir; if (!S.live[k]) delete S.live[k];
+  const z = S.zone || "comptoir", lk = k + "@" + z;
+  if (dir < 0 && !S.live[lk]) { if (liveTotal(k)) toast(`Rien à retirer en « ${zoneLabel(z)} »`); return; }
+  S.live[lk] = (S.live[lk] || 0) + dir; if (!S.live[lk]) delete S.live[lk];
   if (!isBarman()) consume(k, dir);
-  if (cloud()) { const Q = queue(); Q.push({e: ETAB.id, t: k[0], id: k.slice(1), d: dir}); lsSet(QKEY, Q); flush(); }
+  if (cloud()) { const Q = queue(); Q.push({e: ETAB.id, t: k[0], id: k.slice(1), d: dir, z}); lsSet(QKEY, Q); flush(); }
   save(); renderService();
   const n = $("tiles").querySelector(`[data-k="${k}"]`); if (n) n.classList.add("pop");
 }
+const lossObj = l => { const o = {}; for (const z in l) o[z] = {n: l[z].n, c: Math.round(l[z].c * 100) / 100}; return Object.keys(o).length ? o : null; };
 let poll = null;
 function startPoll() {
   clearInterval(poll);
@@ -575,18 +643,23 @@ function startPoll() {
   }, 8000);
 }
 $("closeSvc").onclick = () => {
-  const t = liveTotals(); if (!t.qty) return toast("Aucun verre vendu pour l'instant");
+  const t = liveTotals(); if (!t.qty && !Object.keys(t.loss).length) return toast("Aucun verre vendu pour l'instant");
   const barman = isBarman();
-  const rows = Object.entries(S.live).map(([k, qn]) => ({it: serviceItems().find(x => x.key === k), i: allItems().find(x => x.key === k), q: qn})).filter(r => r.it);
-  const top = rows.slice().sort((a, b) => barman ? b.q * b.it.s - a.q * a.it.s : b.q * b.i.c.marg - a.q * a.i.c.marg).slice(0, 3);
+  const agg = {}; for (const lk in S.live) { const [k, z] = liveSplit(lk); if (isLoss(z)) continue; const i = allItems().find(x => x.key === k);
+    const a = agg[k] = agg[k] || {q: 0, m: 0, ca: 0}; a.q += S.live[lk];
+    if (i) { const pz = zonePrice(i.o.s, z); a.m += S.live[lk] * (pz / (1 + i.c.tva) - i.c.cost); a.ca += S.live[lk] * pz; } }
+  const rows = Object.entries(agg).map(([k, a]) => ({it: serviceItems().find(x => x.key === k), q: a.q, m: a.m, ca: a.ca})).filter(r => r.it).map(r => ({...r, ca: r.ca || r.q * zonePrice(r.it.s, "comptoir")}));
+  const top = rows.slice().sort((a, b) => barman ? b.ca - a.ca : b.m - a.m).slice(0, 3);
+  const lossTxt = Object.entries(t.loss).map(([z, x]) => `${LOSS[z][1]} ${x.n} ${z === "perso" ? "personnel" : LOSS[z][0].toLowerCase()}${!barman && x.c ? " (" + eur(x.c) + ")" : ""}`).join(" · ");
   openSheet(`<h2 class="h">Fin du service</h2><div class="sub">${new Date().toLocaleDateString("fr-FR", {weekday:"long",day:"numeric",month:"long"})}</div>
     <div class="res" style="margin-bottom:14px">
     ${barman ? `<div class="hl"><div><div class="l">Ventes du soir (TTC)</div><div class="v h">${eur(t.ca)}</div></div>${glass(.7, {w:40})}</div><div><div class="l">Verres servis</div><div class="v h">${t.qty}</div></div>`
     : `<div class="hl"><div><div class="l">Marge du soir (HT)</div><div class="v h">${eur(t.marg)}</div></div>${glass(t.ht ? t.marg / t.ht : 0, {w:40})}</div>
     <div><div class="l">Ventes TTC</div><div class="v h">${eur(t.ca)}</div></div><div><div class="l">Ventes HT</div><div class="v h">${eur(t.ht)}</div></div>
-    <div><div class="l">Verres servis</div><div class="v h">${t.qty}</div></div><div><div class="l">Taux de marge</div><div class="v h">${pct(t.ht ? t.marg / t.ht * 100 : NaN)}</div></div>`}</div>
+    <div><div class="l">Verres servis</div><div class="v h">${t.qty}</div></div><div><div class="l">Taux de marge</div><div class="v h">${pct(t.ht ? t.marg / t.ht * 100 : NaN)}</div></div>`}
+    ${lossTxt ? `<div style="grid-column:1/-1"><div class="l">Offerts et pertes${barman ? "" : " (déjà déduits de la marge)"}</div><div style="font-size:13px;margin-top:3px">${lossTxt}</div></div>` : ""}</div>
     <div class="lbl" style="margin-top:4px"><span>${barman ? "Les plus vendus" : "Ce qui a le plus rapporté"}</span></div>
-    <div class="card list">${top.map(r => `<div class="row"><div class="grow"><div class="name">${esc(r.it.n)}</div><div class="meta">${r.q} vendu${r.q > 1 ? "s" : ""}</div></div><div class="right m h">${barman ? eur(r.q * r.it.s) : eur(r.q * r.i.c.marg)}</div></div>`).join("")}</div>
+    <div class="card list">${top.map(r => `<div class="row"><div class="grow"><div class="name">${esc(r.it.n)}</div><div class="meta">${r.q} vendu${r.q > 1 ? "s" : ""}</div></div><div class="right m h">${barman ? eur(r.ca) : eur(r.m)}</div></div>`).join("")}</div>
     <button class="btn" id="doClose">Clôturer et archiver</button><div class="gap"></div><button class="btn ghost" id="keepOpen">Continuer le service</button>`, () => {
     $("doClose").onclick = async () => {
       const b = $("doClose"); b.classList.add("busy");
@@ -596,9 +669,9 @@ $("closeSvc").onclick = () => {
           await q(sb.rpc("cloturer_service", {p_etab: ETAB.id}));
         } catch (e) { b.classList.remove("busy"); return toast(frErr(e)); }
         S.live = {}; lastLoad = 0;
-        if (!barman) S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty});
+        if (!barman) S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty, pertes: lossObj(t.loss)});
       } else {
-        S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty}); S.history = S.history.slice(-14); S.live = {};
+        S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty, pertes: lossObj(t.loss)}); S.history = S.history.slice(-14); S.live = {};
       }
       save(); closeSheet(); go(barman ? "service" : "home"); toast("Service archivé ✓");
     };
@@ -682,6 +755,7 @@ $("copyOrder").onclick = async () => { const o = orderList(); if (!o.length) ret
   const txt = `Bonjour,\n\nVoici ma commande${S.bar ? " pour " + S.bar : ""} :\n` + o.map(x => `- ${x.p.n} : ${x.q} bouteille${x.q > 1 ? "s" : ""}`).join("\n") + "\n\nMerci !";
   try { await navigator.clipboard.writeText(txt); toast("Commande copiée ✓"); } catch (e) { toast("Copie impossible ici"); } };
 $("invBtn").onclick = () => openInventory(false);
+$("perteBtn").onclick = () => perteSheet();
 $("invScanBtn").onclick = () => openInventory(true);
 function openInventory(autoScan) {
   if (!S.products.length) return toast("Ajoutez d'abord des produits");
@@ -898,9 +972,11 @@ function productSheet(id, preset) {
       <div class="field"><label for="fSt">Stock (bouteilles)</label><input id="fSt" inputmode="decimal" value="${f1x(p.st)}"></div>
       <div class="field"><label for="fM">Stock minimum</label><input id="fM" inputmode="decimal" value="${f1x(p.m)}"></div>
     </div>
+    <div class="field"><label>Allergènes (sulfites pour le vin, gluten pour la bière…)</label>${algChips(p.al || [])}</div>
     <div class="card" style="background:var(--card2)"><div class="res" id="fRes"></div></div>
     <button class="btn" id="fSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="fDel">Supprimer ce produit</button>` : ""}`, () => {
-    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim()});
+    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead()});
+    algArm();
     const scanFill = () => openScanner("Visez le code-barres de la bouteille", async code => {
       closeScanner(); $("fCode").value = code;
       const other = S.products.find(x => x.code === code && x.id !== id);
@@ -920,7 +996,7 @@ function productSheet(id, preset) {
     const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T);
       $("fRes").innerHTML = `<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
       <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate, T)}">${pct(c.rate)}</div></div>
-      <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>${chBlock(c, !!x.a, "fS", upd)}`;
+      <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>${zonesLine(x.s, c)}${chBlock(c, !!x.a, "fS", upd)}`;
       const u = $("useSg"); if (u) u.onclick = () => { $("fS").value = f1x(sg); upd(); }; armCh("fS", upd); };
     $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
     $("fSave").onclick = async () => { const x = read();
@@ -954,7 +1030,8 @@ function cocktailSheet(id) {
       const lines = x.ing.map(g => { const p = byId(g.p); return `${esc(p.n.split(" ")[0])} ${eur(pcost(p, g.cl))}`; }).join(" + ");
       $("kRes").innerHTML = `<div><div class="l">Coût du cocktail</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
        <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Prix conseillé (${S.target} %)</div><div class="v h">${eur(sg)}</div></div>
-       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${chBlock(c, c.alc, "kS", upd)}`; armCh("kS", upd); };
+       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${zonesLine(x.s, c)}
+       <div style="grid-column:1/-1"><div class="l">Allergènes (d'après les produits)</div><div style="font-size:12px;margin-top:3px">${esc(algText(cockAlg(x)))}</div></div>${chBlock(c, c.alc, "kS", upd)}`; armCh("kS", upd); };
     drawIng(); upd(); ["kN","kS","kX"].forEach(i => $(i).oninput = upd);
     $("kAdd").onclick = () => { const u = S.products.find(p => !ing.some(g => g.p === p.id)) || S.products[0]; ing.push({p: u.id, cl: 2}); drawIng(); upd(); };
     $("kSave").onclick = async () => { const x = read();
@@ -1002,9 +1079,11 @@ function ingSheet(id) {
     <div class="field"><label for="iP">Prix payé HT pour cette quantité (€)</label><input id="iP" inputmode="decimal" value="${f1x(bi.pa)}" placeholder="Ex : 69,50"></div>
     <div class="field"><label for="iL">Perte à la préparation : <b id="iLl" style="color:var(--amber2)">${f1(num(o.perte))} %</b></label><input id="iL" class="range" type="range" min="0" max="70" step="1" value="${num(o.perte)}">
       <div class="tip" style="padding:6px 0 0">Épluchage, parage, cuisson… Ex : pommes de terre 20 %, salade 30 %.</div></div>
+    <div class="field"><label>Allergènes</label>${algChips(o.al || [])}</div>
     <div class="card" style="background:var(--card2)"><div class="res" id="iRes"></div></div>
     <button class="btn" id="iSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="iDel">Supprimer cet ingrédient</button>` : ""}`, () => {
-    const read = () => { const x = {n: $("iN").value.trim(), qa: num($("iQ").value), ua: $("iU").value, pa: num($("iP").value), perte: +$("iL").value}, b = buyInfo(x);
+    algArm();
+    const read = () => { const x = {n: $("iN").value.trim(), qa: num($("iQ").value), ua: $("iU").value, pa: num($("iP").value), perte: +$("iL").value, al: algRead()}, b = buyInfo(x);
       return {...x, u: b.u, prix: Math.round(b.prix * 10000) / 10000}; };
     const upd = () => { const x = read(), u = CU_U[x.u], real = x.prix / (1 - x.perte / 100); $("iLl").textContent = x.perte + " %";
       $("iRes").innerHTML = `<div><div class="l">Prix d'achat par ${u[2]}</div><div class="v h">${eur(x.prix)}</div></div><div><div class="l">Coût réel par ${u[2]}${x.perte ? " (après perte)" : ""}</div><div class="v h">${eur(real)}</div></div>
@@ -1073,7 +1152,8 @@ function platSheet(id) {
     const upd = () => { const x = read(), k = platCalc(x), T = cuTarget(), sg = suggestPlat(k.cost, k.tva, T);
       $("dRes").innerHTML = `<div><div class="l">Coût de l'assiette</div><div class="v h">${eur(k.cost)}</div></div><div><div class="l">Gagné par assiette</div><div class="v h">${eur(k.marg)}</div></div>
         <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(k.rate, T)}">${pct(k.rate)}</div><div style="font-size:12px;color:var(--mut)">coût matière ${pct(k.ht > 0 ? k.cost / k.ht * 100 : NaN)}</div></div>
-        <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(k.rate) && k.rate < T ? `<button class="mini" id="useSgD">Utiliser</button>` : ""}</div>${chBlock(k, k.tva, "dS", upd, "assiette")}`;
+        <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(k.rate) && k.rate < T ? `<button class="mini" id="useSgD">Utiliser</button>` : ""}</div>
+        <div style="grid-column:1/-1"><div class="l">Allergènes (d'après les ingrédients)</div><div style="font-size:13px;margin-top:3px">${esc(algText(linesAlg(x.lines)))}</div></div>${chBlock(k, k.tva, "dS", upd, "assiette")}`;
       const u = $("useSgD"); if (u) u.onclick = () => { $("dS").value = f1x(sg); upd(); }; armCh("dS", upd); };
     const ed = linesEditor($("dL"), lines, null, upd); $("dAdd").onclick = () => ed.add();
     ["dN", "dC", "dS", "dT", "dX"].forEach(i => $(i).oninput = upd); upd();
@@ -1098,6 +1178,101 @@ function restoSheet() {
       if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Option Restauration activée ✓")) { closeSheet(); if (!r.on) { cuTab = MODE === "demo" ? "d" : "i"; go("cuisine"); } else navSync(); }
       else $("roSave").classList.remove("busy"); };
     if ($("roOff")) armBtn($("roOff"), "Toucher encore pour désactiver", async () => { if (await act(() => actResto({...r, on: false}), "Option désactivée")) closeSheet(); });
+  });
+}
+
+/* ================= Prix par zone ================= */
+function zonesSheet() {
+  const R = zoneRules(), z = k => Object.assign({on: false, t: "eur", v: k === "hh" ? 1 : k === "terrasse" ? 1 : 0.5}, R[k] || {});
+  const block = (k, l, hint) => { const r = z(k); return `<div class="zone card"><label class="sw"><input type="checkbox" id="z_${k}_on" ${r.on ? "checked" : ""}><span><b>${l}</b><small>${hint}</small></span></label>
+    <div class="two" id="z_${k}_box" ${r.on ? "" : "hidden"}><div class="field"><label for="z_${k}_v">${k === "hh" ? "Réduction" : "Supplément"}</label><input id="z_${k}_v" inputmode="decimal" value="${f1x(r.v)}"></div>
+    <div class="field"><label for="z_${k}_t">En</label><select id="z_${k}_t">${opts([["eur","€ par verre"],["pct","% du prix"]], r.t)}</select></div></div></div>`; };
+  openSheet(`<h2 class="h">Prix par zone</h2><div class="sub">Le prix de votre carte est celui du comptoir. Ajoutez un supplément pour la salle ou la terrasse, une réduction pour l'happy hour.</div>
+    ${block("salle", "Salle", "Prix servi à table")}${block("terrasse", "Terrasse", "Souvent un peu plus cher")}${block("hh", "Happy hour", "Prix réduit sur un créneau")}
+    <div class="field" id="hhH" ${z("hh").on ? "" : "hidden"}><label for="z_hh_h">Horaires de l'happy hour (pour mémoire)</label><input id="z_hh_h" value="${esc(z("hh").h || "")}" placeholder="Ex : 17 h – 20 h" maxlength="40"></div>
+    <div class="card" style="background:var(--card2)"><div id="zEx" style="font-size:13px;line-height:1.6"></div></div>
+    <button class="btn" id="zSave">Enregistrer</button>`, () => {
+    const read = () => { const o = {}; ["salle", "terrasse", "hh"].forEach(k => o[k] = {on: $(`z_${k}_on`).checked, t: $(`z_${k}_t`).value, v: num($(`z_${k}_v`).value)}); o.hh.h = $("z_hh_h").value.trim(); return o; };
+    const upd = () => { const o = read(); ["salle", "terrasse", "hh"].forEach(k => $(`z_${k}_box`).hidden = !o[k].on); $("hhH").hidden = !o.hh.on;
+      const ex = S.products[0] ? S.products.find(p => p.a) || S.products[0] : {n: "Un verre à 8 €", s: 8}, keep = S.opts; S.opts = {...(S.opts || {}), zones: o};
+      $("zEx").innerHTML = `<b>Exemple : ${esc(ex.n)}</b><br>` + ZONES.filter(([k]) => zoneOn(k)).map(([k, l]) => `${l} : <b>${eur(zonePrice(ex.s, k))}</b>`).join(" · "); S.opts = keep; };
+    $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
+    $("zSave").onclick = async () => { $("zSave").classList.add("busy");
+      if (await act(() => actOpts({zones: read()}), "Prix par zone enregistrés ✓")) closeSheet(); else $("zSave").classList.remove("busy"); };
+  });
+}
+function zonesLine(base, c) {
+  const zs = ZONES.filter(([k]) => k !== "comptoir" && zoneOn(k)); if (!zs.length || !(base > 0)) return "";
+  return `<div style="grid-column:1/-1"><div class="l">Prix par zone</div><div style="font-size:13px;margin-top:3px;line-height:1.6">${zs.map(([k, l]) => { const pz = zonePrice(base, k), h = pz / (1 + c.tva), r = h > 0 ? (h - c.cost) / h * 100 : NaN;
+    return `${l} <b>${eur(pz)}</b> <span style="color:${tone(r)}">(${pct(r)})</span>`; }).join(" · ")}</div></div>`;
+}
+
+/* ================= Pertes et offerts ================= */
+function monthLosses() {
+  const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0); const by = {};
+  const add = (z, n, c) => { const e = by[z] = by[z] || {n: 0, c: 0}; e.n += n; e.c += c; };
+  (S.history || []).filter(h => !h.demo && new Date(h.date) >= m0 && h.pertes).forEach(h => { for (const z in h.pertes) add(z, h.pertes[z].n, h.pertes[z].c); });
+  (S.pertes || []).filter(x => new Date(x.le) >= m0).forEach(x => add(x.type, 1, x.c));
+  const t = liveTotals(); for (const z in t.loss) add(z, t.loss[z].n, t.loss[z].c);
+  return {by, total: Object.values(by).reduce((a, x) => a + x.c, 0)};
+}
+function renderPertes() {
+  const el = $("pertesCard"); if (!el) return; const m = monthLosses(), ks = Object.keys(m.by);
+  el.innerHTML = (ks.length ? `<div class="row"><div class="grow"><div class="name">${eur(m.total)} ce mois-ci</div><div class="meta" style="white-space:normal">${ks.map(z => `${LOSS[z][1]} ${LOSS[z][0]} : ${eur(m.by[z].c)}`).join(" · ")}</div></div></div>`
+    : `<div class="empty" style="padding:14px 6px 8px">Aucune perte notée ce mois-ci. Les offerts, la casse et les repas du personnel se notent dans le mode Service, ou ici.</div>`)
+    + `<div class="chbtns" style="padding:0 0 12px"><button class="mini" id="pDecl">Noter une perte</button>${(S.pertes || []).length ? `<button class="mini ghostmini" id="pList">Voir le détail</button>` : ""}</div>`;
+  $("pDecl").onclick = () => perteSheet(); if ($("pList")) $("pList").onclick = pertesList;
+}
+function perteSheet() {
+  const items = [...S.products.map(p => ({k: "p" + p.id, n: p.n, nm: p.n, kind: "p", o: p})),
+    ...(restoOn() ? [...cu().d.map(d => ({k: "d" + d.id, n: "🍽️ " + d.n, nm: d.n, kind: "d", o: d})), ...cu().i.map(i => ({k: "i" + i.id, n: "🧺 " + i.n, nm: i.n, kind: "i", o: i}))] : [])];
+  if (!items.length) return toast("Ajoutez d'abord des produits");
+  openSheet(`<h2 class="h">Noter une perte</h2><div class="sub">Casse, offert, repas du personnel, produit jeté : chaque perte notée explique une partie de l'écart d'inventaire.</div>
+    <div class="field"><label for="peT">Type</label><select id="peT">${opts(Object.entries(LOSS).map(([k, v]) => [k, v[1] + "  " + v[0]]), "casse")}</select></div>
+    <div class="field"><label for="peI">Article</label><select id="peI">${opts(items.map(x => [x.k, x.n]), items[0].k)}</select></div>
+    <div class="two"><div class="field"><label for="peQ">Quantité</label><input id="peQ" inputmode="decimal" value="1"></div>
+    <div class="field"><label for="peU">Unité</label><select id="peU"></select></div></div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="peRes"></div></div>
+    <button class="btn" id="peSave">Enregistrer la perte</button>`, () => {
+    const cur = () => items.find(x => x.k === $("peI").value);
+    const units = it => it.kind === "p" ? [["bt", "bouteille(s)"], ["v", "verre(s) de " + f1(it.o.d) + " cl"]] : it.kind === "d" ? [["por", "portion(s)"]]
+      : [[(CU_U[it.o.u] || CU_U.kg)[0], (CU_U[it.o.u] || CU_U.kg)[0] === "pce" ? "pièce(s)" : (CU_U[it.o.u] || CU_U.kg)[0]]];
+    const fillU = () => { const it = cur(); $("peU").innerHTML = opts(units(it), $("peT").value === "casse" || it.kind !== "p" ? units(it)[0][0] : "v"); };
+    const calc = () => { const it = cur(), qn = num($("peQ").value), u = $("peU").value; let c = 0, bt = 0;
+      if (it.kind === "p") { bt = u === "bt" ? qn : qn * it.o.d / it.o.cap; c = bt * it.o.b; }
+      else if (it.kind === "d") c = qn * platCalc(it.o).cost; else c = qn * cuUnitCost("i", it.o.id);
+      return {it, qn, u, c, bt}; };
+    const upd = () => { const x = calc(); $("peRes").innerHTML = `<div style="grid-column:1/-1"><div class="l">Coût de la perte (prix d'achat HT)</div><div class="v h" style="color:var(--bad)">${eur(x.c)}</div>${x.it.kind === "p" ? `<div style="font-size:12px;color:var(--mut);margin-top:3px">Le stock baisse de ${f1(x.bt)} bouteille${x.bt > 1 ? "s" : ""}.</div>` : ""}</div>`; };
+    $("peI").onchange = () => { fillU(); upd(); }; $("peT").onchange = () => { fillU(); upd(); }; $("peQ").oninput = upd; $("peU").onchange = upd; fillU(); upd();
+    $("peSave").onclick = async () => { const x = calc(); if (!(x.qn > 0)) return toast("Indiquez une quantité");
+      const ul = units(x.it).find(u => u[0] === x.u)[1].replace(/\(s\)/, x.qn > 1 ? "s" : "");
+      $("peSave").classList.add("busy");
+      if (await act(() => actPerte({type: $("peT").value, n: x.it.nm, q: x.qn, u: ul, c: x.c,
+        stock: x.it.kind === "p" ? {id: x.it.o.id, st: Math.round((x.it.o.st - x.bt) * 1000) / 1000} : null}), "Perte enregistrée ✓")) closeSheet();
+      else $("peSave").classList.remove("busy"); };
+  });
+}
+function pertesList() {
+  const L = S.pertes || [];
+  openSheet(`<h2 class="h">Pertes notées ce mois-ci</h2><div class="sub">Hors service. Les offerts et la casse notés pendant le service sont comptés dans le bilan de chaque soirée.</div>
+    <div class="card list">${L.map(x => `<div class="row"><div class="emoji">${(LOSS[x.type] || ["", "➖"])[1]}</div><div class="grow"><div class="name">${esc(x.n)}</div><div class="meta">${f1(x.q)} ${esc(x.u)} · ${new Date(x.le).toLocaleDateString("fr-FR", {day: "numeric", month: "short"})}</div></div>
+      <div class="right"><div class="m h" style="color:var(--bad)">${eur(x.c)}</div><button class="mini ghostmini" data-del="${esc(x.id)}">Retirer</button></div></div>`).join("") || `<div class="empty">Aucune perte</div>`}</div>`, () => {
+    $("sBody").querySelectorAll("[data-del]").forEach(b => armBtn(b, "Confirmer", async () => { if (await act(() => actDeletePerte(b.dataset.del), "Perte retirée")) pertesList(); }));
+  });
+}
+
+/* ================= Carte des allergènes ================= */
+function allergenSheet() {
+  const rows = [...(restoOn() ? cu().d.map(d => ({n: d.n, g: "Cuisine", a: linesAlg(d.lines)})) : []),
+    ...S.cocktails.map(k => ({n: k.n, g: "Cocktails", a: cockAlg(k)})), ...S.products.map(p => ({n: p.n, g: "Boissons", a: p.al || []}))];
+  const groups = [...new Set(rows.map(r => r.g))];
+  const html = groups.map(g => `<h3>${g}</h3><table><tbody>${rows.filter(r => r.g === g).map(r => `<tr><td>${esc(r.n)}</td><td>${esc(r.a.length ? r.a.map(algName).join(", ") : "—")}</td></tr>`).join("")}</tbody></table>`).join("");
+  openSheet(`<h2 class="h">Carte des allergènes</h2><div class="sub">Les 14 allergènes réglementaires, d'après les ingrédients que vous avez renseignés. Vérifiez-la avant de l'afficher.</div>
+    <div class="algtable">${html || `<div class="empty">Rien à afficher pour l'instant.</div>`}</div>
+    <button class="btn" id="algPrint">🖨️ Imprimer ou enregistrer en PDF</button>`, () => {
+    $("algPrint").onclick = () => { const pa = $("printArea");
+      pa.innerHTML = `<h1>${esc(S.bar || "Notre carte")} : allergènes</h1><p>Liste des 14 allergènes réglementaires présents dans nos plats et boissons. Renseignez-vous auprès de notre équipe en cas de doute.</p>${html}<p class="pf">Mise à jour le ${new Date().toLocaleDateString("fr-FR")}</p>`;
+      window.print(); };
   });
 }
 
@@ -1172,9 +1347,11 @@ function settingsSheet() {
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
     <button class="btn" id="sSave">Enregistrer</button>
     <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>
-    <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>
+    <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
+    <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet;
+    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -1372,7 +1549,7 @@ async function importDemo() {
 async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
-  S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom;
+  S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom; liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir";
   hideAuth(); closeSheet(); checkAdmin(); setSync("ok"); go(isBarman() ? "service" : "home");
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
@@ -1400,7 +1577,7 @@ let leaveArmed = false;
 function confirmLeave() { if (leaveArmed) return true; leaveArmed = true; setTimeout(() => leaveArmed = false, 3000);
   toast("Des ventes ne sont pas encore envoyées. Touchez encore pour vous déconnecter quand même."); return false; }
 function startDemo(quiet) {
-  MODE = "demo"; ETAB = null; S = loadDemo(); setSync("ok"); go("home");
+  MODE = "demo"; ETAB = null; S = loadDemo(); liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir"; setSync("ok"); go("home");
   if (!quiet && !S.bar && !S.welcomed) { S.welcomed = true; save();
     openSheet(`<div style="text-align:center;padding:6px 0 4px">${glass(.62, {w:64, wave:true})}</div><h2 class="h" style="text-align:center">Bienvenue sur Dosis Bar</h2>
     <div class="sub" style="text-align:center">Votre carte est déjà remplie avec des exemples. Comment s'appelle votre établissement ?</div>
