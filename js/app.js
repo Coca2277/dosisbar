@@ -875,7 +875,7 @@ function settingsSheet() {
     <div class="field"><label for="sT">Objectif spiritueux et cocktails : <b id="sTl" style="color:var(--amber2)">${S.target} %</b></label><input id="sT" class="range" type="range" min="60" max="90" value="${S.target}"></div>
     <div class="field"><label for="sT2">Objectif bouteilles et canettes servies entières (bière, soft, eau) : <b id="sT2l" style="color:var(--amber2)">${S.target2 ?? 65} %</b></label><input id="sT2" class="range" type="range" min="40" max="85" value="${S.target2 ?? 65}"></div>
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
-    <button class="btn" id="sSave">Enregistrer</button>${acc}`, () => {
+    <button class="btn" id="sSave">Enregistrer</button>${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -916,7 +916,7 @@ function accountSheet() {
   openSheet(`<h2 class="h">Mon compte</h2><div class="sub">${esc(ME.email)}</div>
     <div class="card list"><div class="row"><div class="grow"><div class="name">${esc(ETAB.nom)}</div><div class="meta">Vous êtes barman : mode Service uniquement</div></div></div></div>
     <button class="btn ghost" id="swEtab">Changer d'établissement ou rejoindre</button><div class="gap"></div>
-    <button class="btn danger" id="logout">Se déconnecter</button>`, () => {
+    <button class="btn danger" id="logout">Se déconnecter</button>${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); }; $("logout").onclick = logout; });
 }
 $("setBtn").onclick = settingsSheet;
@@ -935,6 +935,7 @@ function showAuth(screen, msg) {
   if (screen === "signup") html = `${brand}<h2 class="h" id="authTitle">Créer un compte</h2><div class="sub">Gratuit pendant la phase de lancement.</div>
     <form id="aForm"><div class="field"><label for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><input id="aPass" type="password" autocomplete="new-password" minlength="8" required></div>
+    <label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45"><input type="checkbox" id="aCgu" required style="margin-top:1px;flex:none"> <span>J'accepte les <a href="conditions.html" target="_blank" style="color:var(--amber2)">conditions d'utilisation</a> et j'ai lu la <a href="confidentialite.html" target="_blank" style="color:var(--amber2)">politique de confidentialité</a>.</span></label>
     <div class="err" id="aErr" role="alert"></div><button class="btn" type="submit">Créer mon compte</button></form>
     <div class="center" style="margin-top:10px"><button class="link" id="aLogin">J'ai déjà un compte</button></div>${demoLink}`;
   if (screen === "forgot") html = `${brand}<h2 class="h" id="authTitle">Mot de passe oublié</h2><div class="sub">Nous vous envoyons un lien pour en choisir un nouveau.</div>
@@ -956,7 +957,7 @@ function showAuth(screen, msg) {
       <form id="aJoin"><div class="field"><label for="aCode">Code à 6 caractères</label><input id="aCode" required maxlength="6" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:.2em;text-align:center"></div>
       <div class="err" id="aErr2" role="alert"></div><button class="btn ghost" type="submit">Rejoindre</button></form></div>
     <div class="center"><button class="link" id="aOut">Se déconnecter</button></div>`;
-  $("authBody").innerHTML = html; A.classList.add("on"); A.scrollTop = 0;
+  $("authBody").innerHTML = html + `<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`; A.classList.add("on"); A.scrollTop = 0;
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on("aSignup", () => showAuth("signup")); on("aLogin", () => showAuth("login")); on("aForgot", () => showAuth("forgot"));
   on("aDemo", () => { lsSet(MKEY, "demo"); hideAuth(); startDemo(); });
@@ -968,6 +969,7 @@ function showAuth(screen, msg) {
     busy(form, false); if (error) return err(frErr(error)); ME = data.user; enterCloud(); };
   if (screen === "signup") form.onsubmit = async ev => { ev.preventDefault(); err("");
     if ($("aPass").value.length < 8) return err("Mot de passe trop court (8 caractères minimum).");
+    if (!$("aCgu").checked) return err("Merci d'accepter les conditions d'utilisation.");
     busy(form, true);
     const {data, error} = await sb.auth.signUp({email: $("aEmail").value.trim(), password: $("aPass").value, options: {emailRedirectTo: location.origin + location.pathname}});
     busy(form, false); if (error) return err(frErr(error));

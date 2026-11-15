@@ -1,0 +1,29 @@
+@font-face{font-family:"Figtree";src:url("../fonts/figtree.woff2") format("woff2");font-weight:300 900;font-display:swap}
+@font-face{font-family:"Bricolage Grotesque";src:url("../fonts/bricolage-grotesque.woff2") format("woff2");font-weight:200 800;font-display:swap}
+:root{--bg:#14110F;--card:#1D1916;--line:#352D27;--txt:#F4EDE4;--mut:#A39686;--amber:#E8A33D;--amber2:#F5C16C}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);color:var(--txt);font-family:Figtree,system-ui,sans-serif;font-size:16px;line-height:1.65}
+body{max-width:760px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top)) 22px 64px}
+a{color:var(--amber2)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:36px}
+.logo{display:flex;align-items:center;gap:10px;font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:20px;color:var(--txt);text-decoration:none}
+.logo span{color:var(--amber)}
+.back{font-size:14px;font-weight:600;text-decoration:none;border:1px solid var(--line);border-radius:12px;padding:8px 14px;color:var(--txt);background:var(--card)}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(30px,6vw,42px);line-height:1.1;letter-spacing:-.02em;margin-bottom:8px}
+.maj{color:var(--mut);font-size:14px;margin-bottom:30px}
+h2{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;letter-spacing:-.01em;margin:36px 0 10px}
+h3{font-size:16px;margin:20px 0 6px}
+p,li{color:#E6DDD2;max-width:68ch}
+p{margin-bottom:12px}
+ul{margin:0 0 14px 20px}
+li{margin-bottom:6px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:16px 0}
+.box p:last-child{margin-bottom:0}
+dl{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:8px 18px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:12px 0}
+dt{color:var(--mut);font-size:14px}
+dd{font-weight:500}
+table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:15px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:14px;display:flex;flex-wrap:wrap;gap:8px 18px}
+@media (max-width:560px){dl{grid-template-columns:1fr}dt{margin-top:6px}table{font-size:14px}}
