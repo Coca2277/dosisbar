@@ -107,9 +107,6 @@ img{display:block;max-width:100%}
 .prix{background:var(--acajou);border-block:1px solid var(--ligne);padding:96px 0;text-align:center}
 .prix .titre{margin-inline:auto;max-width:14ch}
 .prix .intro{margin:0 auto 34px;max-width:52ch}
-.inclus{list-style:none;display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:760px;margin:0 auto 38px}
-.inclus li{font-size:15px;font-weight:600;padding:8px 14px;border-radius:99px;border:1px solid var(--ligne);background:rgba(20,17,15,.4)}
-.prix .sous{justify-content:center}
 
 /* ---------- Questions ---------- */
 .faq{padding:104px 0}
@@ -156,3 +153,27 @@ footer nav{display:flex;flex-wrap:wrap;gap:8px 18px}
   .cmp td.nous::before{content:"Dosis Bar";display:block;font-size:12px;font-weight:600;color:var(--encre2);opacity:.8}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- Ardoise des prix ---------- */
+.ardoise{display:grid;grid-template-columns:repeat(3,1fr);max-width:1000px;margin:0 auto;text-align:left;background:rgba(20,17,15,.55);border:1px solid var(--ligne);border-radius:22px;overflow:hidden}
+.formule{padding:30px 28px 32px;display:flex;flex-direction:column;gap:14px}
+.formule + .formule{border-left:1px solid var(--ligne)}
+.formule.pilote{background:linear-gradient(180deg,rgba(232,163,61,.14),rgba(232,163,61,.03));box-shadow:inset 0 3px 0 var(--ambre)}
+.formule .nom{font-weight:700;font-size:18px;display:flex;align-items:center;gap:10px}
+.bientot{font-size:13px;font-weight:600;color:var(--miel);border:1px solid rgba(232,163,61,.45);border-radius:99px;padding:3px 10px}
+.tarif{font-size:clamp(40px,4vw,52px);font-weight:800;line-height:1;color:var(--creme);font-variant-numeric:tabular-nums}
+.pilote .tarif{color:var(--miel)}
+.tarif small{display:block;font-family:Figtree,sans-serif;font-size:15px;font-weight:500;letter-spacing:0;color:var(--mut);margin-top:8px}
+.cond{color:#E6DACB;font-size:16px;line-height:1.5}
+.cond b{color:var(--creme)}
+.formule ul{list-style:none;display:grid;gap:9px;font-size:16px;color:#E6DACB;line-height:1.4}
+.formule li{padding-left:22px;position:relative}
+.formule li::before{content:"";position:absolute;left:2px;top:.5em;width:9px;height:9px;border-radius:2px;background:var(--ambre);opacity:.85}
+.formule .btn{margin-top:auto;align-self:flex-start}
+.btn.ghost{background:transparent;color:var(--creme);box-shadow:inset 0 0 0 1.5px var(--ligne)}
+.btn.ghost:hover{background:var(--acajou2)}
+.formule .note{font-size:14px;color:var(--mut);margin-top:-4px}
+@media (max-width:860px){
+  .ardoise{grid-template-columns:1fr}
+  .formule + .formule{border-left:0;border-top:1px solid var(--ligne)}
+}

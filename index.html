@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14110F">
 <title>Dosis Bar — ce que chaque verre vous rapporte vraiment</title>
-<meta name="description" content="L'app des patrons de bar : la marge de chaque verre, le service en direct, l'inventaire en scannant les bouteilles, l'import de la caisse. Gratuit, sans rendez-vous.">
+<meta name="description" content="L'app des patrons de bar : la marge de chaque verre, le service en direct, l'inventaire en scannant les bouteilles, l'import de la caisse. Essai gratuit, sans rendez-vous.">
 <meta property="og:title" content="Dosis Bar — ce que chaque verre vous rapporte vraiment">
 <meta property="og:description" content="Marge au verre, service en direct, inventaire par scan, import de caisse. Pensé pour le comptoir.">
 <meta property="og:image" content="https://dosisbar.com/img/app-home.webp">
@@ -39,6 +39,7 @@
       Dosis <b>Bar</b>
     </a>
     <nav aria-label="Compte">
+      <a class="lnk" href="#prix">Tarifs</a>
       <a class="lnk" href="app.html">Se connecter</a>
       <a class="btn small" href="app.html">Essayer gratuitement</a>
     </nav>
@@ -123,7 +124,7 @@
             <tr><th scope="row">Pendant le service</th><td class="eux">Rien, les chiffres arrivent le lendemain</td><td class="nous">La marge de la soirée en direct</td></tr>
             <tr><th scope="row">L'inventaire</th><td class="eux">Des listes à remplir</td><td class="nous">Les bouteilles scannées, l'écart chiffré en euros</td></tr>
             <tr><th scope="row">Votre équipe</th><td class="eux">Tout le monde voit tout, ou personne</td><td class="nous">Le barman sert, le patron voit les marges</td></tr>
-            <tr><th scope="row">Le prix</th><td class="eux">Souvent de 49 à 190 € par mois et par établissement</td><td class="nous">Gratuit pendant le lancement</td></tr>
+            <tr><th scope="row">Le prix</th><td class="eux">De 49 € à plusieurs centaines d'euros par mois, souvent avec des frais d'installation</td><td class="nous">De 29,99 à 49 € HT par mois, sans frais ni engagement</td></tr>
           </tbody>
         </table>
         <span class="sceau">Conçu à Paris</span>
@@ -144,15 +145,35 @@
   </section>
 
   <!-- Prix -->
-  <section class="prix" aria-labelledby="t-prix">
+  <section class="prix" id="prix" aria-labelledby="t-prix">
     <div class="wrap">
-      <h2 class="titre h" id="t-prix">Gratuit pendant le lancement.</h2>
-      <p class="intro">Tout est inclus, pour votre établissement et toute votre équipe. Créez votre compte et commencez avec une carte d'exemple, ou la vôtre.</p>
-      <ul class="inclus">
-        <li>Marge au verre</li><li>Dosis Score</li><li>Service en direct</li><li>Cocktails</li><li>Inventaire par scan</li>
-        <li>Import de la caisse</li><li>Calcul du surdosage</li><li>Équipe patron et barmen</li><li>Fonctionne sans réseau</li>
-      </ul>
-      <div class="sous"><a class="btn" href="app.html">Créer mon compte gratuit</a><span>Sans carte bancaire, sans engagement.</span></div>
+      <h2 class="titre h" id="t-prix">Un prix simple, sans engagement.</h2>
+      <p class="intro">Par établissement, toute votre équipe incluse. Pas de frais d'installation, pas de rendez-vous commercial. Le mode essai reste gratuit pour découvrir l'app.</p>
+      <div class="ardoise">
+        <div class="formule pilote">
+          <p class="nom">Bar pilote</p>
+          <p class="tarif h">29,99 €<small>HT par mois</small></p>
+          <p class="cond"><b>2 mois offerts</b>, puis ce prix est bloqué à vie. Pour les premiers bars qui testent Dosis Bar avec nous et nous donnent leur avis.</p>
+          <a class="btn" href="mailto:contact@dosisbar.com?subject=Devenir%20bar%20pilote%20Dosis%20Bar">Devenir bar pilote</a>
+          <p class="note">Places limitées</p>
+        </div>
+        <div class="formule">
+          <p class="nom">Dosis Bar</p>
+          <p class="tarif h">49 €<small>HT par mois</small></p>
+          <ul>
+            <li>Marge de chaque verre et cocktail</li><li>Dosis Score et prix conseillés</li><li>Service en direct, même sans réseau</li>
+            <li>Inventaire en scannant les bouteilles</li><li>Import du fichier de la caisse</li><li>Barmen sans accès aux prix d'achat</li>
+          </ul>
+          <a class="btn ghost" href="app.html">Créer mon compte</a>
+        </div>
+        <div class="formule">
+          <p class="nom">Pro <span class="bientot">Bientôt</span></p>
+          <p class="tarif h">79 €<small>HT par mois</small></p>
+          <ul>
+            <li>Tout Dosis Bar</li><li>Lecture automatique des factures fournisseurs</li><li>Connexion directe à votre caisse</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -165,6 +186,7 @@
         <details><summary>Et si le réseau du bar coupe ?</summary><p>Le service continue. Les ventes sont gardées sur le téléphone et envoyées dès que la connexion revient.</p></details>
         <details><summary>Mes barmen voient-ils mes marges ?</summary><p>Non. Vous les invitez avec un code : ils n'ont accès qu'au mode Service, sans les prix d'achat ni les marges.</p></details>
         <details><summary>Ma caisse est-elle compatible ?</summary><p>Si elle sait exporter les ventes en fichier CSV ou Excel, oui : SumUp, Flatpay, Zelty, Lightspeed, L'Addition, Square, Tiller et les autres. Dosis Bar reconnaît les colonnes et relie les noms à votre carte. Sans caisse, le mode Service fait le travail.</p></details>
+        <details><summary>Combien ça coûte ?</summary><p>Le mode essai est gratuit. L'abonnement Dosis Bar coûte 49 € HT par mois et par établissement, toute l'équipe incluse, sans engagement. Les premiers bars pilotes ont 2 mois offerts puis 29,99 € HT par mois, prix bloqué à vie.</p></details>
         <details><summary>Où sont mes données ?</summary><p>En Europe, sur des serveurs sécurisés. Elles vous appartiennent et ne sont jamais revendues. Tout est expliqué dans la <a href="confidentialite.html">politique de confidentialité</a>.</p></details>
       </div>
     </div>

@@ -989,7 +989,7 @@ function showAuth(screen, msg) {
     <div class="err" id="aErr" role="alert">${esc(msg || "")}</div><button class="btn" type="submit">Se connecter</button></form>
     <div class="center" style="margin-top:10px"><button class="link" id="aForgot">Mot de passe oublié ?</button></div>
     <div class="gap"></div><button class="btn ghost" id="aSignup">Créer un compte</button>${demoLink}`;
-  if (screen === "signup") html = `${brand}<h2 class="h" id="authTitle">Créer un compte</h2><div class="sub">Gratuit pendant la phase de lancement.</div>
+  if (screen === "signup") html = `${brand}<h2 class="h" id="authTitle">Créer un compte</h2><div class="sub">Essai gratuit, sans carte bancaire.</div>
     <form id="aForm"><div class="field"><label for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><input id="aPass" type="password" autocomplete="new-password" minlength="8" required></div>
     <label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45"><input type="checkbox" id="aCgu" required style="margin-top:1px;flex:none"> <span>J'accepte les <a href="conditions.html" target="_blank" style="color:var(--amber2)">conditions d'utilisation</a> et j'ai lu la <a href="confidentialite.html" target="_blank" style="color:var(--amber2)">politique de confidentialité</a>.</span></label>
