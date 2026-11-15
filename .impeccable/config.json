@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T08:54:53.790Z",
+        "reason": "Claude: les sections pleine largeur .fuite et .prix entourent un .wrap qui garde 20px de marge de chaque côté (min(1140px,100% - 40px)), vérifié sur captures 390px"
+      },
+      {
+        "rule": "tight-leading",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T08:54:53.800Z",
+        "reason": "Claude: seul le titre d'affichage .fuite p.big (30–56px, Bricolage 700) est concerné ; interlignage serré voulu pour un titre, le texte courant est à 1.6"
+      }
+    ]
+  }
+}
