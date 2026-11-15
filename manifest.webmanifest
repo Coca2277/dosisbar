@@ -3,7 +3,7 @@
   "short_name": "Dosis Bar",
   "description": "La marge de chaque verre, le service en direct, le stock et l'inventaire.",
   "lang": "fr",
-  "start_url": "./",
+  "start_url": "app.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

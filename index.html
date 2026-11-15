@@ -4,191 +4,219 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14110F">
-<meta name="description" content="Dosis Bar : la marge de chaque verre, le service en direct, le stock et l'inventaire pour les bars et restaurants.">
-<title>Dosis Bar</title>
-<link rel="manifest" href="manifest.webmanifest">
+<title>Dosis Bar — ce que chaque verre vous rapporte vraiment</title>
+<meta name="description" content="L'app des patrons de bar : la marge de chaque verre, le service en direct, l'inventaire en scannant les bouteilles, l'import de la caisse. Gratuit, sans rendez-vous.">
+<meta property="og:title" content="Dosis Bar — ce que chaque verre vous rapporte vraiment">
+<meta property="og:description" content="Marge au verre, service en direct, inventaire par scan, import de caisse. Pensé pour le comptoir.">
+<meta property="og:image" content="https://dosisbar.com/img/app-home.webp">
+<meta property="og:url" content="https://dosisbar.com/">
+<link rel="canonical" href="https://dosisbar.com/">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Dosis Bar">
-<link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="css/app.css">
+<link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+/* Les habitués vont directement à l'app ; les liens des emails aussi. */
+(function () {
+  try {
+    var h = location.hash;
+    if (/access_token|type=(recovery|signup|invite|email_change)|error_description/.test(h)) { location.replace("app.html" + h); return; }
+    if (/[?&]vitrine/.test(location.search)) return;
+    var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+    if (standalone || localStorage.getItem("dosisbar.mode")) location.replace("app.html");
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="css/site.css">
 </head>
 <body>
-<div class="stage">
-  <aside class="side">
-    <div class="mark"><span id="sideGlass"></span><h1 class="h">Dosis <b>Bar</b></h1></div>
-    <p class="tag">L'app qui montre ce que chaque verre vous rapporte vraiment.</p>
-    <ul>
-      <li><i>◆</i><span><b>Dosis Score</b> : la santé de votre bar en un chiffre, chaque soir.</span></li>
-      <li><i>⚡</i><span><b>Mode service</b> : un tap par verre vendu, la marge du soir en direct.</span></li>
-      <li><i>€</i><span><b>Argent à récupérer</b> : les prix à corriger, avec le gain par mois.</span></li>
-      <li><i>🍹</i><span><b>Cocktails</b> : coût exact de chaque recette, ingrédient par ingrédient.</span></li>
-      <li><i>💧</i><span><b>Surdosage</b> : ce que la main lourde vous coûte sur l'année.</span></li>
-      <li><i>📦</i><span><b>Inventaire</b> : l'écart entre ce qui est vendu et ce qui manque.</span></li>
-    </ul>
-    <small id="sideNote">Vos données sont sauvegardées en ligne et partagées avec votre équipe.</small>
-    <p style="margin-top:14px;font-size:12px"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></p>
-  </aside>
 
-  <div class="phone">
-    <header>
-      <div class="logo h"><span id="logoGlass"></span>Dosis <span>Bar</span></div>
-      <div class="hdr-r"><span class="sync" id="sync" hidden>Synchronisé</span><button class="iconbtn" id="setBtn" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button></div>
-    </header>
-
-    <main id="main">
-      <!-- ACCUEIL -->
-      <section class="view on" id="v-home">
-        <h2 class="h" id="hello">Bonsoir</h2>
-        <div class="sub" id="today"></div>
-        <div class="card hero">
-          <div class="gl" id="scoreGlass"></div>
-          <div>
-            <div class="mut" style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Dosis Score</div>
-            <div class="score h"><span id="score">—</span><small>/100</small></div>
-            <span class="verdict" id="verdict"></span>
-            <p id="scoreTip"></p>
-          </div>
-        </div>
-        <div class="duo">
-          <div class="stat"><div class="l">Marge moyenne</div><div class="v h" id="kRate">—</div></div>
-          <div class="stat"><div class="l">Gagné par verre</div><div class="v h" id="kEur">—</div></div>
-        </div>
-
-        <div class="card" id="tonight"></div>
-
-        <div class="lbl"><span>Argent à récupérer</span><span id="oppTotal" style="color:var(--ok);text-transform:none;letter-spacing:0"></span></div>
-        <div class="card list" id="opps"></div>
-
-        <div class="lbl"><span>Stock à surveiller</span><a data-go="stock">Voir le stock</a></div>
-        <div class="card list" id="alerts"></div>
-
-        <div class="lbl"><span>Marge des derniers services</span></div>
-        <div class="card"><div class="chart" id="chart"></div></div>
-      </section>
-
-      <!-- CARTE -->
-      <section class="view" id="v-menu">
-        <h2 class="h">Ma carte</h2>
-        <div class="sub">Touchez un produit pour le modifier</div>
-        <div class="seg" id="menuSeg"><button data-v="p" class="on">Produits</button><button data-v="k">Cocktails</button></div>
-        <div class="search"><input id="q" placeholder="Rechercher…" autocomplete="off"></div>
-        <div class="chips" id="sortChips"></div>
-        <div class="card list" id="menuList"></div>
-      </section>
-
-      <!-- SERVICE -->
-      <section class="view" id="v-service">
-        <div class="svc">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div><h2 class="h" style="margin:0">Service</h2><span class="live" id="svcLive">En cours</span></div>
-            <button class="mini" id="closeSvc" style="margin:0;padding:10px 14px">Clôturer</button>
-          </div>
-          <div class="card">
-            <div><div class="k">Marge ce soir (HT)</div><div class="n amber h" id="sMarg">0,00 €</div></div>
-            <div><div class="k">Ventes TTC</div><div class="n h" id="sCA">0 €</div></div>
-            <div><div class="k">Verres</div><div class="n h" id="sQty">0</div></div>
-          </div>
-        </div>
-        <button class="btn ghost" id="importBtn" style="margin-bottom:12px">📄 Importer les ventes de la caisse</button>
-        <div class="chips" id="svcChips"></div>
-        <div class="tiles" id="tiles"></div>
-        <p class="tip" style="text-align:center;margin-top:14px">Un tap = un verre vendu. Le stock baisse tout seul.</p>
-      </section>
-
-      <!-- CALCUL -->
-      <section class="view" id="v-calc">
-        <h2 class="h">Calculs</h2>
-        <div class="sub">Pour décider avec des chiffres, pas au feeling</div>
-        <div class="seg" id="calcSeg"><button data-v="glass" class="on">Un verre</button><button data-v="pour">Surdosage</button><button data-v="price">Hausse de prix</button></div>
-
-        <div id="c-glass">
-          <div class="seg" id="cAlc" style="margin-bottom:12px"><button data-v="1" class="on">Alcool · TVA 20 %</button><button data-v="0">Sans alcool · 10 %</button></div>
-          <div class="two">
-            <div class="field"><label>Prix bouteille HT (€)</label><input id="cBuy" inputmode="decimal" value="18"></div>
-            <div class="field"><label>Contenance (cl)</label><input id="cCap" inputmode="decimal" value="70"></div>
-            <div class="field"><label>Dose servie (cl)</label><input id="cDose" inputmode="decimal" value="4"></div>
-            <div class="field"><label>Prix de vente TTC (€)</label><input id="cSell" inputmode="decimal" value="8"></div>
-          </div>
-          <div class="card"><div class="res" id="cRes"></div><p class="tip" id="cTip" style="margin-top:10px"></p></div>
-          <div class="card">
-            <div class="field" style="margin-bottom:6px"><label>Taux de marge visé : <b id="tLbl" style="color:var(--amber2)"></b></label><input id="tRange" class="range" type="range" min="50" max="92" value="80"></div>
-            <div style="display:flex;justify-content:space-between;align-items:center"><span class="tip">Prix TTC conseillé</span><b class="h" id="tPrice" style="font-size:24px;color:var(--amber2)">—</b></div>
-          </div>
-          <button class="btn" id="cSave">Ajouter à ma carte</button>
-        </div>
-
-        <div id="c-pour" style="display:none">
-          <div class="card" style="background:linear-gradient(160deg,#2A1B1A,var(--card) 70%);border-color:#4A2E2A">
-            <p class="tip" style="color:var(--txt)">La « main lourde » au comptoir est la fuite d'argent la plus courante. 1 cl de trop par verre, ça se voit à peine… sauf sur l'année.</p>
-          </div>
-          <div class="field"><label>Produit</label><select id="pProd"></select></div>
-          <div class="two">
-            <div class="field"><label>Dose prévue (cl)</label><input id="pPlan" inputmode="decimal"></div>
-            <div class="field"><label>Dose réellement servie (cl)</label><input id="pReal" inputmode="decimal"></div>
-            <div class="field"><label>Verres par soir</label><input id="pGlass" inputmode="decimal" value="30"></div>
-            <div class="field"><label>Soirs par semaine</label><input id="pDays" inputmode="decimal" value="6"></div>
-          </div>
-          <div class="card"><div class="res" id="pRes"></div><p class="tip" id="pTip" style="margin-top:10px"></p></div>
-        </div>
-
-        <div id="c-price" style="display:none">
-          <div class="field"><label>Sur quels produits ?</label><select id="xCat"></select></div>
-          <div class="field"><label>Hausse par verre : <b id="xLbl" style="color:var(--amber2)"></b></label><input id="xUp" class="range" type="range" min="0.1" max="2" step="0.1" value="0.5"></div>
-          <div class="field"><label>Verres vendus par mois et par produit</label><input id="xVol" inputmode="decimal"></div>
-          <div class="card"><div class="res" id="xRes"></div><p class="tip" id="xTip" style="margin-top:10px"></p></div>
-          <button class="btn" id="xApply">Appliquer cette hausse à ma carte</button>
-        </div>
-      </section>
-
-      <!-- STOCK -->
-      <section class="view" id="v-stock">
-        <h2 class="h">Stock</h2>
-        <div class="sub">Ajustez avec + et −, ou faites l'inventaire complet</div>
-        <div class="duo">
-          <div class="stat"><div class="l">Valeur du stock HT</div><div class="v h" id="stVal">—</div></div>
-          <div class="stat"><div class="l">À commander</div><div class="v h" id="stLow">—</div></div>
-        </div>
-        <button class="btn" id="invScanBtn">📷 Inventaire en scannant les bouteilles</button><div class="gap"></div>
-        <button class="btn ghost" id="invBtn">📋 Inventaire à la main</button>
-        <div class="lbl"><span>Bouteilles</span><span id="lastInv" style="text-transform:none;letter-spacing:0"></span></div>
-        <div class="card list" id="stockList"></div>
-        <div class="lbl"><span>Commande fournisseur</span></div>
-        <div class="card list" id="order"></div>
-        <button class="btn" id="copyOrder">Copier la commande</button>
-      </section>
-    </main>
-
-    <button class="fab" id="fab" aria-label="Ajouter">+</button>
-
-    <nav><div class="bar">
-      <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Accueil</button>
-      <button data-v="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 2h6v4l2 3v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9l2-3z"/><path d="M7 13h10"/></svg>Carte</button>
-      <button data-v="service" class="svcbtn"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 4h14l-1.6 15.2A2 2 0 0 1 15.4 21H8.6a2 2 0 0 1-2-1.8z"/><path d="M6 10h12"/></svg></span>Service</button>
-      <button data-v="calc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M8 6.5h8M8.5 11h.01M12 11h.01M15.5 11h.01M8.5 14.5h.01M12 14.5h.01M15.5 14.5h.01M8.5 18h.01M12 18h.01M15.5 18h.01"/></svg>Calculs</button>
-      <button data-v="stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>Stock</button>
-    </div></nav>
-
-    <div class="veil" id="veil"></div>
-    <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><div id="sBody"></div></div>
-    <div class="scanner" id="scanner" role="dialog" aria-modal="true" aria-label="Lecteur de code-barres">
-      <video id="scanVideo" playsinline muted autoplay></video>
-      <div class="scan-top"><button class="iconbtn" id="scanClose" aria-label="Fermer le lecteur">✕</button><div class="scan-title" id="scanTitle">Visez le code-barres</div><button class="iconbtn" id="scanTorch" aria-label="Allumer la lampe" hidden>🔦</button></div>
-      <div class="scan-zone"><div class="scan-frame" id="scanFrame"><div class="scan-line"></div></div></div>
-      <div class="scan-panel" id="scanPanel"></div>
-    </div>
-    <div class="auth" id="auth" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div id="authBody"></div></div>
-    <div class="toast" id="toast"></div>
+<header class="top" id="top">
+  <div class="wrap">
+    <a class="logo h" href="./?vitrine" aria-label="Dosis Bar, accueil">
+      <svg width="22" height="28" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="lg"><path d="M7 4h26l-3.3 40.4A3 3 0 0 1 26.7 47H13.3a3 3 0 0 1-3-2.6z"/></clipPath></defs><g clip-path="url(#lg)"><rect y="20" width="40" height="30" fill="#E8A33D"/></g><path d="M7 4h26l-3.3 40.4A3 3 0 0 1 26.7 47H13.3a3 3 0 0 1-3-2.6z" fill="none" stroke="rgba(244,237,228,.5)" stroke-width="2"/></svg>
+      Dosis <b>Bar</b>
+    </a>
+    <nav aria-label="Compte">
+      <a class="lnk" href="app.html">Se connecter</a>
+      <a class="btn small" href="app.html">Essayer gratuitement</a>
+    </nav>
   </div>
-</div>
+</header>
 
-<script src="js/vendor/supabase.js"></script>
-<script src="js/config.js"></script>
-<script src="js/scan.js"></script>
-<script src="js/import.js"></script>
-<script src="js/app.js"></script>
+<main>
+  <!-- Le verre -->
+  <section class="hero" aria-labelledby="t-hero">
+    <div class="wrap">
+      <div>
+        <h1 class="h" id="t-hero">Ce que chaque verre vous rapporte vraiment.</h1>
+        <p class="lead">Dosis Bar calcule la marge de chaque verre, suit la soirée en direct et retrouve l'argent qui file entre deux services. Essayez avec une de vos bouteilles.</p>
+        <div class="sous">
+          <a class="btn" href="app.html">Essayer gratuitement</a>
+          <span>Sans carte bancaire, sans rendez-vous.</span>
+        </div>
+      </div>
+
+      <form class="verre" id="verre" aria-label="Calculer la marge d'un verre" onsubmit="return false">
+        <div class="glass" id="glass" aria-hidden="true"></div>
+        <div aria-live="polite">
+          <div class="gain h" id="gain">4,85 €<small>gagnés par verre, hors taxes</small></div>
+          <div class="taux"><span class="pill ok" id="taux">81 % de marge</span><span class="pill" id="coef">coefficient × 5,2</span></div>
+        </div>
+        <div class="champs">
+          <div class="champ"><label for="cBut">Bouteille HT</label><div class="in"><input id="cBut" inputmode="decimal" value="18"><span class="u">€</span></div></div>
+          <div class="champ"><label for="cCap">Contenance</label><div class="in"><select id="cCap"><option value="50">50 cl</option><option value="70" selected>70 cl</option><option value="100">1 litre</option></select></div></div>
+          <div class="champ"><label for="cDose">Dose servie</label><div class="in"><input id="cDose" inputmode="decimal" value="4"><span class="u">cl</span></div></div>
+          <div class="champ"><label for="cPrix">Verre TTC</label><div class="in"><input id="cPrix" inputmode="decimal" value="8"><span class="u">€</span></div></div>
+        </div>
+        <p class="conseil" id="conseil"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- La fuite -->
+  <section class="fuite" aria-labelledby="t-fuite">
+    <div class="wrap">
+      <p class="big h" id="t-fuite">Un centilitre de trop dans chaque verre, c'est <output id="perte">1 457 €</output> de ventes perdues par an, sur cette seule bouteille.</p>
+      <p class="note">Calculé avec votre verre ci-dessus, pour 10 verres de ce produit par soir, 6 soirs sur 7. Dosis Bar vous montre ces fuites pour chaque produit, et l'inventaire vous dit où elles se trouvent.</p>
+    </div>
+  </section>
+
+  <!-- Une soirée -->
+  <section class="soiree" aria-labelledby="t-soiree">
+    <div class="wrap">
+      <h2 class="titre h" id="t-soiree">Une soirée avec Dosis Bar.</h2>
+      <p class="intro">Pas un logiciel de plus à apprendre : votre soirée, telle qu'elle se passe déjà, avec les chiffres en plus.</p>
+      <ol class="heures" role="list">
+        <li class="heure">
+          <div class="txt"><div class="clock h">18 h</div><h3 class="h">Vous ouvrez.</h3><p>Le Dosis Score vous dit en un chiffre comment va votre carte. Les prix trop bas sont listés avec ce qu'ils vous coûtent par mois. Un bouton suffit pour les corriger.</p></div>
+          <div class="shot"><img src="img/app-home.webp" alt="Écran d'accueil de Dosis Bar : Dosis Score de 90 sur 100 et argent à récupérer" width="390" height="844" loading="lazy"></div>
+        </li>
+        <li class="heure">
+          <div class="txt"><div class="clock h">20 h</div><h3 class="h">Le service démarre.</h3><p>Un tap par verre vendu. La marge de la soirée monte en direct et le stock baisse tout seul. Vos barmen n'ont accès qu'au service : ils ne voient jamais vos prix d'achat.</p></div>
+          <div class="shot"><img src="img/app-service.webp" alt="Mode service : tuiles des boissons avec le nombre de verres vendus et la marge de la soirée" width="390" height="844" loading="lazy"></div>
+        </li>
+        <li class="heure">
+          <div class="txt"><div class="clock h">1 h</div><h3 class="h">Vous fermez.</h3><p>Le bilan s'affiche : ventes, marge, ce qui a le plus rapporté. Vous avez une caisse ? Importez son fichier de ventes, Dosis Bar fait le reste.</p></div>
+          <div class="shot"><img src="img/app-close.webp" alt="Fin du service : marge du soir de 66,39 euros et produits les plus rentables" width="390" height="844" loading="lazy"></div>
+        </li>
+        <li class="heure">
+          <div class="txt"><div class="clock h">Lundi</div><h3 class="h">Vous faites l'inventaire.</h3><p>Scannez vos bouteilles avec l'appareil photo du téléphone. Dosis Bar compare avec ce qui a été vendu et chiffre l'écart en euros : casse, verres offerts, doses trop généreuses.</p></div>
+          <div class="shot"><img src="img/app-inv.webp" alt="Inventaire : écart calculé de 106 euros de ventes manquées" width="390" height="844" loading="lazy"></div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- L'étiquette -->
+  <section class="etiq" aria-labelledby="t-etiq">
+    <div class="wrap">
+      <div class="label"><div class="label-in">
+        <h2 class="titre h" id="t-etiq">Pensé pour le comptoir, pas pour la cuisine.</h2>
+        <p class="intro">Les logiciels de gestion parlent de plats et de fiches techniques. Dosis Bar parle de verres, de doses et de cocktails.</p>
+        <table class="cmp">
+          <thead><tr><th scope="col"><span class="visually-hidden"></span></th><th scope="col">Logiciels de restauration</th><th scope="col">Dosis Bar</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Ce qu'on calcule</th><td class="eux">Le coût d'un plat</td><td class="nous">La marge de chaque verre, dose et cocktail</td></tr>
+            <tr><th scope="row">Pour démarrer</th><td class="eux">Rendez-vous, démonstration, installation accompagnée</td><td class="nous">Deux minutes, seul, depuis votre téléphone</td></tr>
+            <tr><th scope="row">Pendant le service</th><td class="eux">Rien, les chiffres arrivent le lendemain</td><td class="nous">La marge de la soirée en direct</td></tr>
+            <tr><th scope="row">L'inventaire</th><td class="eux">Des listes à remplir</td><td class="nous">Les bouteilles scannées, l'écart chiffré en euros</td></tr>
+            <tr><th scope="row">Votre équipe</th><td class="eux">Tout le monde voit tout, ou personne</td><td class="nous">Le barman sert, le patron voit les marges</td></tr>
+            <tr><th scope="row">Le prix</th><td class="eux">Souvent de 49 à 190 € par mois et par établissement</td><td class="nous">Gratuit pendant le lancement</td></tr>
+          </tbody>
+        </table>
+        <span class="sceau">Conçu à Paris</span>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- Histoire -->
+  <section class="histoire" aria-labelledby="t-hist">
+    <div class="wrap">
+      <h2 class="titre h" id="t-hist">Né derrière le comptoir.</h2>
+      <blockquote>
+        <p>Dosis Bar est créé par Paris Rhum Club, importateur de rhums et de boissons cubaines à Paris depuis 2020. En livrant des bars, une question revenait toujours : « combien je gagne vraiment sur ce verre ? »</p>
+        <p>Les outils existants parlaient de cuisine, de fiches techniques et de rendez-vous commerciaux. Nous avons fait celui que nous aurions voulu offrir à nos clients.</p>
+        <footer class="sig"><b>Amilcar Coca</b>Fondateur de Paris Rhum Club</footer>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- Prix -->
+  <section class="prix" aria-labelledby="t-prix">
+    <div class="wrap">
+      <h2 class="titre h" id="t-prix">Gratuit pendant le lancement.</h2>
+      <p class="intro">Tout est inclus, pour votre établissement et toute votre équipe. Créez votre compte et commencez avec une carte d'exemple, ou la vôtre.</p>
+      <ul class="inclus">
+        <li>Marge au verre</li><li>Dosis Score</li><li>Service en direct</li><li>Cocktails</li><li>Inventaire par scan</li>
+        <li>Import de la caisse</li><li>Calcul du surdosage</li><li>Équipe patron et barmen</li><li>Fonctionne sans réseau</li>
+      </ul>
+      <div class="sous"><a class="btn" href="app.html">Créer mon compte gratuit</a><span>Sans carte bancaire, sans engagement.</span></div>
+    </div>
+  </section>
+
+  <!-- Questions -->
+  <section class="faq" aria-labelledby="t-faq">
+    <div class="wrap">
+      <h2 class="titre h" id="t-faq">Vos questions.</h2>
+      <div>
+        <details><summary>Faut-il installer quelque chose ?</summary><p>Non. Dosis Bar s'ouvre dans le navigateur de votre téléphone, de votre tablette ou de votre ordinateur. Vous pouvez l'ajouter à l'écran d'accueil pour l'ouvrir comme une application.</p></details>
+        <details><summary>Et si le réseau du bar coupe ?</summary><p>Le service continue. Les ventes sont gardées sur le téléphone et envoyées dès que la connexion revient.</p></details>
+        <details><summary>Mes barmen voient-ils mes marges ?</summary><p>Non. Vous les invitez avec un code : ils n'ont accès qu'au mode Service, sans les prix d'achat ni les marges.</p></details>
+        <details><summary>Ma caisse est-elle compatible ?</summary><p>Si elle sait exporter les ventes en fichier CSV ou Excel, oui : SumUp, Flatpay, Zelty, Lightspeed, L'Addition, Square, Tiller et les autres. Dosis Bar reconnaît les colonnes et relie les noms à votre carte. Sans caisse, le mode Service fait le travail.</p></details>
+        <details><summary>Où sont mes données ?</summary><p>En Europe, sur des serveurs sécurisés. Elles vous appartiennent et ne sont jamais revendues. Tout est expliqué dans la <a href="confidentialite.html">politique de confidentialité</a>.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="fin" aria-labelledby="t-fin">
+    <div class="wrap">
+      <h2 class="titre h" id="t-fin">Votre prochain service, en sachant ce que vous gagnez.</h2>
+      <a class="btn" href="app.html">Essayer gratuitement</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 PARIS RHUM CLUB · <a href="mailto:contact@dosisbar.com">contact@dosisbar.com</a></span>
+    <nav aria-label="Informations légales"><a href="mentions-legales.html">Mentions légales</a><a href="confidentialite.html">Confidentialité</a><a href="conditions.html">Conditions d'utilisation</a></nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var num = function (v) { var n = parseFloat(String(v).replace(",", ".").replace(/\s/g, "")); return isFinite(n) ? n : 0; };
+  var eur = function (v, d) { return v.toLocaleString("fr-FR", {minimumFractionDigits: d, maximumFractionDigits: d}) + " €"; };
+  var GLASS = "M7 4h26l-3.3 40.4A3 3 0 0 1 26.7 47H13.3a3 3 0 0 1-3-2.6z";
+  $("glass").innerHTML = '<svg viewBox="0 0 40 50"><defs><clipPath id="hg"><path d="' + GLASS + '"/></clipPath></defs>' +
+    '<g clip-path="url(#hg)"><rect width="40" height="50" fill="rgba(244,237,228,.06)"/>' +
+    '<g class="liq" id="liq"><path class="wave" fill="#E8A33D" d="M-40 0q5 -2.4 10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0V60H-40z"/></g></g>' +
+    '<path d="' + GLASS + '" fill="none" stroke="rgba(244,237,228,.55)" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  function calc() {
+    var b = num($("cBut").value), cap = num($("cCap").value), d = num($("cDose").value), ttc = num($("cPrix").value);
+    var ht = ttc / 1.2, cout = cap > 0 ? b / cap * d : 0, m = ht - cout, taux = ht > 0 ? m / ht * 100 : 0;
+    var ok = b > 0 && cap > 0 && d > 0 && ttc > 0;
+    $("gain").firstChild.nodeValue = ok ? eur(m, 2) : "—";
+    var t = $("taux"); t.textContent = ok ? Math.round(taux) + " % de marge" : "Remplissez les champs";
+    t.className = "pill " + (taux >= 80 ? "ok" : taux >= 70 ? "warn" : "bad");
+    $("coef").textContent = ok && cout > 0 ? "coefficient × " + (ht / cout).toFixed(1).replace(".", ",") : "";
+    var lvl = Math.max(0, Math.min(1, taux / 100)), y = 46 - 41 * lvl;
+    $("liq").style.transform = "translateY(" + y + "px)";
+    var conseil = Math.ceil(cout / 0.2 * 1.2 * 10 - 1e-9) / 10;
+    $("conseil").innerHTML = !ok ? "" : taux >= 80 ? "Belle marge. Dosis Bar la suit pour chaque produit de votre carte."
+      : "Pour atteindre 80 % de marge, ce verre devrait être vendu <b>" + eur(conseil, 2) + "</b>.";
+    // un centilitre de trop par verre, 10 verres par soir, 6 soirs sur 7
+    var verresPerdus = d > 0 ? (10 * 6 * 52) / d : 0;
+    $("perte").textContent = ok ? eur(Math.round(verresPerdus * ht), 0) : "—";
+  }
+  ["cBut", "cCap", "cDose", "cPrix"].forEach(function (id) { $(id).addEventListener("input", calc); $(id).addEventListener("change", calc); });
+  calc();
+  var top = $("top"); addEventListener("scroll", function () { top.classList.toggle("scrolled", scrollY > 8); }, {passive: true});
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
+})();
+</script>
 </body>
 </html>

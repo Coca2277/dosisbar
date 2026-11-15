@@ -1,7 +1,7 @@
 /* Dosis Bar — service worker : l'app s'ouvre même sans réseau.
    Les données (Supabase) ne passent jamais par ce cache. */
-const VERSION = "dosis-v5";
-const SHELL = ["./", "index.html", "css/app.css", "js/app.js", "js/config.js", "js/vendor/supabase.js", "js/scan.js", "js/import.js", "js/vendor/xlsx.mini.min.js", "js/vendor/zxing.min.js",
+const VERSION = "dosis-v6";
+const SHELL = ["app.html", "index.html", "css/site.css", "img/app-home.webp", "css/app.css", "js/app.js", "js/config.js", "js/vendor/supabase.js", "js/scan.js", "js/import.js", "js/vendor/xlsx.mini.min.js", "js/vendor/zxing.min.js",
   "manifest.webmanifest", "fonts/figtree.woff2", "fonts/bricolage-grotesque.woff2", "mentions-legales.html", "confidentialite.html", "conditions.html", "css/doc.css", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -20,7 +20,7 @@ self.addEventListener("fetch", e => {
     e.respondWith(fetch(req).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
       return res;
-    }).catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match("index.html"))));
+    }).catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match(url.pathname.endsWith("/") || url.pathname.endsWith("index.html") ? "index.html" : "app.html"))));
     return;
   }
 });
