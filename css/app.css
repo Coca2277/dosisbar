@@ -104,7 +104,7 @@ input:focus,select:focus{border-color:var(--amber)!important}
 .seg button.on{background:var(--amber);color:#1a1208;font-weight:600}
 .field{margin-bottom:12px}
 .field label{display:block;color:var(--mut);font-size:12px;margin-bottom:6px}
-.field input,.field select{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 13px;outline:none;-webkit-appearance:none;appearance:none}
+.field input,.field select,.field textarea{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 13px;outline:none;-webkit-appearance:none;appearance:none}
 .field select{background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);background-position:calc(100% - 17px) 52%,calc(100% - 12px) 52%;background-size:5px 5px;background-repeat:no-repeat;padding-right:30px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .field input.range,.range{width:100%;accent-color:var(--amber);background:none;border:0;padding:6px 0;-webkit-appearance:auto;appearance:auto}
@@ -242,3 +242,13 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .drop:hover,.drop.over{border-color:var(--amber);background:var(--amberT)}
 .drop .e{font-size:30px;margin-bottom:6px}
 .field input[type=date]{color-scheme:dark}
+.field textarea{font:inherit;color:var(--txt);resize:vertical;min-height:110px;line-height:1.5}
+.field textarea:focus{border-color:var(--amber)}
+#avH{flex-wrap:wrap;overflow:visible;margin:0 0 14px;padding:0}
+.avis-cta{display:flex;align-items:center;gap:12px;margin-top:18px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.avis-cta .mini{margin:0;flex:none;padding:9px 13px;font-size:13px}
+.avis-cta + .btn{margin-top:10px}
+.avis-msg{white-space:pre-wrap;margin:4px 0;line-height:1.45}
+.avis-row.neuf{box-shadow:inset 3px 0 0 var(--amber)}
+.avis-cta .meta{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;margin-top:2px}
+.avis-row.neuf{padding-left:12px}

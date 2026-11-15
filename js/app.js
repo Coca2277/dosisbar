@@ -875,7 +875,8 @@ function settingsSheet() {
     <div class="field"><label for="sT">Objectif spiritueux et cocktails : <b id="sTl" style="color:var(--amber2)">${S.target} %</b></label><input id="sT" class="range" type="range" min="60" max="90" value="${S.target}"></div>
     <div class="field"><label for="sT2">Objectif bouteilles et canettes servies entières (bière, soft, eau) : <b id="sT2l" style="color:var(--amber2)">${S.target2 ?? 65} %</b></label><input id="sT2" class="range" type="range" min="40" max="85" value="${S.target2 ?? 65}"></div>
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
-    <button class="btn" id="sSave">Enregistrer</button>${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn" id="sSave">Enregistrer</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    armAvis();
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -916,10 +917,66 @@ function accountSheet() {
   openSheet(`<h2 class="h">Mon compte</h2><div class="sub">${esc(ME.email)}</div>
     <div class="card list"><div class="row"><div class="grow"><div class="name">${esc(ETAB.nom)}</div><div class="meta">Vous êtes barman : mode Service uniquement</div></div></div></div>
     <button class="btn ghost" id="swEtab">Changer d'établissement ou rejoindre</button><div class="gap"></div>
-    <button class="btn danger" id="logout">Se déconnecter</button>${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn danger" id="logout">Se déconnecter</button>${avisBtns()}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    armAvis();
     $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); }; $("logout").onclick = logout; });
 }
 $("setBtn").onclick = settingsSheet;
+
+/* ================= Avis des testeurs ================= */
+let IS_ADMIN = false;
+function avisBtns() {
+  return `<div class="avis-cta"><div class="grow"><div class="name">Votre avis compte</div><div class="meta">Une idée, un manque, un bug : dites-le-nous, on corrige vite.</div></div><button class="mini" id="avisGo">Donner mon avis</button></div>`
+    + (IS_ADMIN ? `<button class="btn ghost" id="avisRead">Avis reçus</button>` : "");
+}
+function armAvis() {
+  if ($("avisGo")) $("avisGo").onclick = avisSheet;
+  if ($("avisRead")) $("avisRead").onclick = avisList;
+}
+function avisSheet() {
+  const ecran = (document.querySelector(".view.on") || {}).id || "";
+  openSheet(`<h2 class="h">Donner mon avis</h2><div class="sub">Votre message arrive directement chez l'équipe Dosis Bar.</div>
+    <div class="chips" role="radiogroup" aria-label="Type d'avis" id="avH">
+      <button class="chip" role="radio" aria-checked="false" data-h="aime">👍 J'aime</button>
+      <button class="chip" role="radio" aria-checked="false" data-h="manque">💡 Il manque quelque chose</button>
+      <button class="chip" role="radio" aria-checked="false" data-h="bloque">⚠️ Quelque chose bloque</button>
+    </div>
+    <div class="field"><label for="avM">Votre message</label><textarea id="avM" rows="5" maxlength="2000" placeholder="Ex : j'aimerais pouvoir gérer le vin au verre…"></textarea></div>
+    <button class="btn" id="avSend">Envoyer</button>`, () => {
+    let h = "";
+    $("avH").querySelectorAll("[data-h]").forEach(b => b.onclick = () => { h = b.dataset.h;
+      $("avH").querySelectorAll("[data-h]").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); }); });
+    $("avM").focus();
+    $("avSend").onclick = async () => {
+      const m = $("avM").value.trim(); if (!m) { toast("Écrivez quelques mots avant d'envoyer"); $("avM").focus(); return; }
+      const app = navigator.userAgent.replace(/\s+/g, " ").slice(0, 200);
+      if (MODE === "cloud") {
+        $("avSend").classList.add("busy");
+        try { await q(sb.rpc("donner_avis", {p_etab: ETAB ? ETAB.id : null, p_humeur: h, p_message: m, p_ecran: ecran, p_appareil: app}));
+          closeSheet(); toast("Merci, avis envoyé ✓"); return; }
+        catch (e) { $("avSend").classList.remove("busy"); if (navigator.onLine) { toast(frErr(e)); return; } }
+      }
+      const lbl = {aime: "J'aime", manque: "Il manque quelque chose", bloque: "Quelque chose bloque"}[h] || "Avis";
+      location.href = "mailto:contact@dosisbar.com?subject=" + encodeURIComponent("Avis Dosis Bar : " + lbl) + "&body=" + encodeURIComponent(m + "\n\n(" + (S.bar || "") + ")");
+      closeSheet();
+    };
+  });
+}
+async function avisList() {
+  openSheet(`<h2 class="h">Avis reçus</h2><div class="sub">Les messages de vos testeurs, du plus récent au plus ancien.</div><div class="card list" id="avL"><div class="empty">Chargement…</div></div>`, async () => {
+    try {
+      const rows = await q(sb.rpc("lire_avis"));
+      const ic = {aime: "👍", manque: "💡", bloque: "⚠️"};
+      $("avL").innerHTML = rows.length ? rows.map(r => `<div class="row avis-row${r.lu ? "" : " neuf"}" data-id="${r.id}"><div class="grow">
+        <div class="meta">${ic[r.humeur] || "💬"} ${esc(new Date(r.cree_le).toLocaleString("fr-FR", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}))} · ${esc(r.etab_nom || "Sans établissement")}${r.role ? " · " + (r.role === "patron" ? "Patron" : "Barman") : ""}</div>
+        <div class="avis-msg">${esc(r.message)}</div><div class="meta">${esc(r.email || "")}</div></div></div>`).join("")
+        : `<div class="empty">Aucun avis pour l'instant.</div>`;
+      rows.filter(r => !r.lu).forEach(r => sb.rpc("marquer_avis_lu", {p_id: r.id}));
+    } catch (e) { $("avL").innerHTML = `<div class="empty">${esc(frErr(e))}</div>`; }
+  });
+}
+function checkAdmin() { if (MODE === "cloud" && sb) sb.rpc("est_admin").then(({data}) => { IS_ADMIN = !!data; }, () => {}); }
+
 
 /* ================= Connexion, compte, établissement ================= */
 function showAuth(screen, msg) {
@@ -1018,7 +1075,7 @@ async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
   S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom;
-  hideAuth(); closeSheet(); setSync("ok"); go(isBarman() ? "service" : "home");
+  hideAuth(); closeSheet(); checkAdmin(); setSync("ok"); go(isBarman() ? "service" : "home");
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
 }
@@ -1038,7 +1095,7 @@ async function enterCloud() {
 async function logout() {
   if (queueLen() && !confirmLeave()) return;
   try { await sb.auth.signOut(); } catch (e) {}
-  ME = null; ETAB = null; MODE = "demo"; localStorage.removeItem(EKEY); localStorage.removeItem(MKEY);
+  ME = null; ETAB = null; IS_ADMIN = false; MODE = "demo"; localStorage.removeItem(EKEY); localStorage.removeItem(MKEY);
   closeSheet(); startDemo(true); showAuth("login");
 }
 let leaveArmed = false;
