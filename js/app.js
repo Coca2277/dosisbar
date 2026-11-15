@@ -103,8 +103,9 @@ const chOn = () => cpv() > 0;
 const netTarget = () => S.ch && isFinite(num(S.ch.net)) ? num(S.ch.net) : 15;
 function withCh(r) { const ch = cpv(), full = r.cost + ch, net = r.ht - full;
   return Object.assign(r, {ch, full, net, netRate: r.ht > 0 ? net / r.ht * 100 : NaN}); }
-function suggestNet(cost, alc, netPct = netTarget()) { const ht = (cost + cpv()) / (1 - netPct / 100); return ceil10(ht * (alc ? 1.2 : 1.1)); }
-function minPrice(cost, alc) { return ceil10((cost + cpv()) * (alc ? 1.2 : 1.1)); }
+const tvaOf = a => typeof a === "number" ? a : (a ? .2 : .1);
+function suggestNet(cost, alc, netPct = netTarget()) { const ht = (cost + cpv()) / (1 - netPct / 100); return ceil10(ht * (1 + tvaOf(alc))); }
+function minPrice(cost, alc) { return ceil10((cost + cpv()) * (1 + tvaOf(alc))); }
 function realVolume() { // verres réellement vendus par mois, d'après les services clôturés
   const h = (S.history || []).filter(x => !x.demo && x.qty > 0); if (h.length < 3) return null;
   const t = h.map(x => +new Date(x.date)), days = Math.max(7, (Math.max(...t) - Math.min(...t)) / 864e5 + 1);
@@ -122,6 +123,44 @@ function status(c, p, t = S.target) {
   if (c.rate < t - 10) return ["Marge faible", "b-bad"];
   if (c.rate < t) return ["À ajuster", "b-warn"];
   return ["Rentable", "b-ok"];
+}
+/* ================= Restauration : calculs ================= */
+const CU_U = {kg: ["g", 1000, "kg"], L: ["cl", 100, "L"], pce: ["pce", 1, "pièce"]};
+const CU_CATS = {"Entrée":"🥗","Plat":"🍽️","Dessert":"🍰","Burger, sandwich":"🍔","Pizza":"🍕","Accompagnement":"🍟","Planche, tapas":"🧀","Menu, formule":"🍱","Autre":"🍴"};
+const cu = () => S.cu || (S.cu = {i: [], r: [], d: []});
+const restoOn = () => !!(S.resto && S.resto.on);
+const cuTarget = () => (S.resto && S.resto.target) || 70;
+const cuFind = (t, id) => (cu()[t] || []).find(x => String(x.id) === String(id));
+function cuUnit(t, id) { const o = cuFind(t, id); if (!o) return ""; return t === "i" ? (CU_U[o.u] || CU_U.kg)[0] : o.ru || "g"; }
+function cuUnitCost(t, id, seen = new Set()) { // coût HT d'une petite unité (g, cl ou pièce)
+  const o = cuFind(t, id); if (!o) return 0;
+  if (t === "i") { const u = CU_U[o.u] || CU_U.kg, perte = Math.min(90, Math.max(0, num(o.perte))); return num(o.prix) / u[1] / (1 - perte / 100); }
+  if (seen.has(o.id)) return 0; seen.add(o.id);
+  const r = num(o.rend); return r > 0 ? linesCost(o.lines, seen) / r : 0;
+}
+function linesCost(lines, seen) { return (lines || []).reduce((t, l) => t + cuUnitCost(l.t, l.id, new Set(seen)) * num(l.q), 0); }
+function platCalc(d) { const tva = num(d.tva || 10) / 100, cost = linesCost(d.lines) + num(d.x), ht = num(d.s) / (1 + tva), marg = ht - cost;
+  return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc: false}); }
+function suggestPlat(cost, tva, t = cuTarget()) { return ceil10(cost / (1 - t / 100) * (1 + tva)); }
+function prepUses(r, target, seen = new Set()) { // la préparation r utilise-t-elle target (directement ou non) ?
+  if (seen.has(r.id)) return false; seen.add(r.id);
+  return (r.lines || []).some(l => l.t === "r" && (String(l.id) === String(target) || (cuFind("r", l.id) && prepUses(cuFind("r", l.id), target, seen))));
+}
+function seedCuisine() {
+  const t = Date.now(), I = [
+    ["Bœuf haché 15 %","kg",13.9,0],["Pain burger brioché","pce",0.42,0],["Cheddar en tranches","pce",0.16,0],["Tomate","kg",2.9,10],
+    ["Salade iceberg","pce",1.1,30],["Pommes de terre","kg",1.1,20],["Huile de friture","L",2.6,0],["Crème fraîche","L",4.2,0],
+    ["Oignon","kg",1.4,15],["Citron","pce",0.35,0],["Poulet (filets)","kg",9.8,5],["Parmesan","kg",18,0]];
+  const i = I.map(([n, u, prix, perte], k) => ({id: "ci" + (t + k), n, u, prix, perte}));
+  const id = n => i.find(x => x.n === n).id;
+  const r = [
+    {id: "cr" + t, n: "Frites maison", rend: 800, ru: "g", lines: [{t:"i",id:id("Pommes de terre"),q:1000},{t:"i",id:id("Huile de friture"),q:8}]},
+    {id: "cr" + (t + 1), n: "Sauce maison", rend: 300, ru: "g", lines: [{t:"i",id:id("Crème fraîche"),q:25},{t:"i",id:id("Oignon"),q:60},{t:"i",id:id("Citron"),q:1}]}];
+  const d = [
+    {id: "cd" + t, n: "Burger maison et frites", c: "Burger, sandwich", s: 16, tva: 10, x: 0.15, lines: [{t:"i",id:id("Bœuf haché 15 %"),q:150},{t:"i",id:id("Pain burger brioché"),q:1},{t:"i",id:id("Cheddar en tranches"),q:2},{t:"i",id:id("Tomate"),q:30},{t:"i",id:id("Salade iceberg"),q:0.1},{t:"r",id:r[1].id,q:30},{t:"r",id:r[0].id,q:200}]},
+    {id: "cd" + (t + 1), n: "Salade César", c: "Entrée", s: 13, tva: 10, x: 0.2, lines: [{t:"i",id:id("Poulet (filets)"),q:120},{t:"i",id:id("Salade iceberg"),q:0.3},{t:"i",id:id("Parmesan"),q:20},{t:"r",id:r[1].id,q:40}]},
+    {id: "cd" + (t + 2), n: "Portion de frites", c: "Accompagnement", s: 4.5, tva: 10, x: 0.08, lines: [{t:"r",id:r[0].id,q:180}]}];
+  return {i, r, d};
 }
 function allItems() { return [...S.products.map(p => ({key:"p"+p.id,kind:"p",o:p,c:prodCalc(p)})),
                              ...S.cocktails.map(k => ({key:"k"+k.id,kind:"k",o:k,c:cockCalc(k)}))]; }
@@ -185,6 +224,9 @@ async function loadCloud() {
       history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres})),
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
     S.alias = et.alias_caisse || {};
+    S.opts = et.options || {}; S.resto = S.opts.resto || null;
+    try { const cr = await q(sb.from("cuisine").select("id,type,data").eq("etab_id", e));
+      S.cu = {i: [], r: [], d: []}; cr.forEach(x => (S.cu[x.type] || []).push({...x.data, id: x.id})); } catch (x) { S.cu = S.cu || {i: [], r: [], d: []}; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
   }
@@ -320,6 +362,24 @@ function importEstimate(list) {
     ca += unit * x.q; ht += h * x.q; marg += (h - i.c.cost) * x.q; qty += x.q; });
   return {ca, ht, marg, qty};
 }
+async function actSaveCu(t, id, x) {
+  const list = cu()[t];
+  if (cloud()) {
+    const data = {...x}; delete data.id;
+    if (id) { await q(sb.from("cuisine").update({data, modifie_le: new Date().toISOString()}).eq("id", id)); Object.assign(list.find(o => o.id === id), x); }
+    else { const r = await q(sb.from("cuisine").insert({etab_id: ETAB.id, type: t, data}).select("id").single()); list.unshift({...x, id: r.id}); }
+  } else { if (id) Object.assign(list.find(o => o.id === id), x); else list.unshift({...x, id: "c" + t + Date.now()}); }
+}
+async function actDeleteCu(t, id) {
+  if (cloud()) await q(sb.from("cuisine").delete().eq("id", id));
+  const c = cu(); c[t] = c[t].filter(o => o.id !== id);
+  [...c.r, ...c.d].forEach(o => o.lines = (o.lines || []).filter(l => !(l.t === t && l.id === id)));
+}
+async function actResto(r) {
+  if (cloud()) { const o = {...(S.opts || {}), resto: r}; await q(sb.from("etablissements").update({options: o}).eq("id", ETAB.id)); S.opts = o; }
+  S.resto = r;
+  if (r && r.on && MODE === "demo" && !(cu().i.length || cu().d.length)) S.cu = seedCuisine();
+}
 async function actCharges(c) {
   if (cloud()) await q(c ? sb.from("etab_charges").upsert({etab_id: ETAB.id, data: c, maj: new Date().toISOString()})
                          : sb.from("etab_charges").delete().eq("etab_id", ETAB.id));
@@ -414,9 +474,16 @@ function renderHome() {
 
 /* ================= Carte ================= */
 let menuKind = "p", sortBy = "marg", cat = "Toutes";
-$("menuSeg").querySelectorAll("button").forEach(b => b.onclick = () => { menuKind = b.dataset.v; $("menuSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderMenu(); });
+function armSeg() { $("menuSeg").querySelectorAll("button").forEach(b => { b.classList.toggle("on", b.dataset.v === menuKind);
+  b.onclick = () => { menuKind = b.dataset.v; $("menuSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderMenu(); }; }); }
+armSeg();
 $("q").oninput = () => renderMenu();
+let cuTab = "d";
 function renderMenu() {
+  const segC = $("menuSeg").querySelector('[data-v="c"]');
+  if (restoOn() && !segC) { const b = document.createElement("button"); b.dataset.v = "c"; b.textContent = "Cuisine"; $("menuSeg").appendChild(b); armSeg(); }
+  if (!restoOn() && segC) { segC.remove(); if (menuKind === "c") menuKind = "p"; armSeg(); }
+  if (menuKind === "c") return renderCuisine();
   const sorts = [["marg","Marge €"],["rate","Marge %"],["name","A → Z"]];
   const cats = menuKind === "p" ? ["Toutes", ...new Set(S.products.map(p => p.c))] : [];
   if (!cats.includes(cat)) cat = "Toutes";
@@ -437,7 +504,7 @@ function renderMenu() {
     : `<div class="empty">${menuKind === "k" ? "Aucun cocktail. Touchez + pour créer votre première recette." : S.products.length ? "Aucun produit trouvé" : "Votre carte est vide. Touchez + pour ajouter votre premier produit."}</div>`;
   $("menuList").querySelectorAll("[data-k]").forEach(r => r.onclick = () => { const k = r.dataset.k; k[0] === "p" ? productSheet(k.slice(1)) : cocktailSheet(k.slice(1)); });
 }
-$("fab").onclick = () => menuKind === "p" ? productSheet(null) : cocktailSheet(null);
+$("fab").onclick = () => menuKind === "p" ? productSheet(null) : menuKind === "k" ? cocktailSheet(null) : cuTab === "d" ? platSheet(null) : cuTab === "r" ? prepSheet(null) : ingSheet(null);
 
 /* ================= Service ================= */
 let svcCat = "Tout";
@@ -884,13 +951,139 @@ function cocktailSheet(id) {
   });
 }
 
+/* ================= Restauration : écrans ================= */
+function renderCuisine() {
+  const c = cu(), tabs = [["d", "Plats", c.d.length], ["r", "Préparations", c.r.length], ["i", "Ingrédients", c.i.length]];
+  $("sortChips").innerHTML = tabs.map(([k, l, n]) => `<button class="chip ${cuTab === k ? "on" : ""}" data-t="${k}">${l}${n ? " · " + n : ""}</button>`).join("");
+  $("sortChips").querySelectorAll("[data-t]").forEach(b => b.onclick = () => { cuTab = b.dataset.t; renderMenu(); });
+  const qs = $("q").value.trim().toLowerCase(), list = c[cuTab].filter(o => (o.n || "").toLowerCase().includes(qs));
+  let html;
+  if (cuTab === "d") html = list.map(d => ({d, k: platCalc(d)})).sort((a, b) => b.k.marg - a.k.marg).map(({d, k}) => { const T = cuTarget(), st = status(k, null, T);
+    return `<div class="row tap" data-id="${esc(d.id)}"><div class="emoji">${CU_CATS[d.c] || "🍴"}</div>
+      <div class="grow"><div class="name">${esc(d.n)}</div><div class="meta">${eur(num(d.s))} TTC · coût ${eur(k.cost)} · TVA ${String(num(d.tva || 10)).replace(".", ",")} %</div></div>
+      <div class="right"><div class="m h">${eur(k.marg)}</div>${chOn() && k.ht > 0 ? `<div style="font-size:12px;font-weight:600;color:${k.net < 0 ? "var(--bad)" : k.netRate >= netTarget() ? "var(--ok)" : "var(--amber)"}">réel ${eur(k.net)}</div>` : `<div style="font-size:12px;color:${tone(k.rate, T)};font-weight:600">${pct(k.rate)}</div>`}<span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("");
+  else if (cuTab === "r") html = list.map(r => { const u = r.ru || "g", per = cuUnitCost("r", r.id), big = u === "g" ? ["kg", 1000] : u === "cl" ? ["L", 100] : ["pièce", 1];
+    return `<div class="row tap" data-id="${esc(r.id)}"><div class="emoji">🥣</div><div class="grow"><div class="name">${esc(r.n)}</div><div class="meta">Rend ${f1(num(r.rend))} ${u} · ${(r.lines || []).length} ingrédient${(r.lines || []).length > 1 ? "s" : ""}</div></div>
+      <div class="right"><div class="m h">${eur(per * big[1])}</div><div class="meta" style="margin:0">par ${big[0]}</div></div></div>`; }).join("");
+  else html = list.slice().sort((a, b) => a.n.localeCompare(b.n)).map(i => { const u = CU_U[i.u] || CU_U.kg, real = cuUnitCost("i", i.id) * u[1];
+    return `<div class="row tap" data-id="${esc(i.id)}"><div class="emoji">🧺</div><div class="grow"><div class="name">${esc(i.n)}</div><div class="meta">${eur(num(i.prix))} HT / ${u[2]}${num(i.perte) ? " · perte " + f1(num(i.perte)) + " %" : ""}</div></div>
+      <div class="right"><div class="m h">${eur(real)}</div><div class="meta" style="margin:0">réel / ${u[2]}</div></div></div>`; }).join("");
+  const empty = {d: c.i.length ? "Aucun plat. Touchez + pour créer votre première fiche." : "Commencez par ajouter vos ingrédients (onglet Ingrédients), puis créez vos plats.",
+    r: "Aucune préparation. Une sauce, une pâte, des frites maison : préparez-les une fois, utilisez-les dans plusieurs plats.", i: "Aucun ingrédient. Touchez + pour ajouter le premier, avec son prix d'achat."}[cuTab];
+  $("menuList").innerHTML = html || `<div class="empty">${qs ? "Rien trouvé" : empty}</div>`;
+  $("menuList").querySelectorAll("[data-id]").forEach(r => r.onclick = () => ({d: platSheet, r: prepSheet, i: ingSheet})[cuTab](r.dataset.id));
+}
+function ingSheet(id) {
+  const o = id ? cuFind("i", id) : {n: "", u: "kg", prix: "", perte: 0};
+  openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouvel ingrédient"}</h2><div class="sub">Prix d'achat hors taxes, tel qu'il est sur la facture</div>
+    <div class="field"><label for="iN">Nom</label><input id="iN" value="${esc(o.n)}" placeholder="Ex : Bœuf haché 15 %" maxlength="80"></div>
+    <div class="two"><div class="field"><label for="iU">Acheté au</label><select id="iU">${opts([["kg","Kilo"],["L","Litre"],["pce","À la pièce"]], o.u)}</select></div>
+    <div class="field"><label for="iP" id="iPl">Prix HT par kilo (€)</label><input id="iP" inputmode="decimal" value="${f1x(o.prix)}"></div></div>
+    <div class="field"><label for="iL">Perte à la préparation : <b id="iLl" style="color:var(--amber2)">${f1(num(o.perte))} %</b></label><input id="iL" class="range" type="range" min="0" max="70" step="1" value="${num(o.perte)}">
+      <div class="tip" style="padding:6px 0 0">Épluchage, parage, cuisson… Ex : pommes de terre 20 %, salade 30 %.</div></div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="iRes"></div></div>
+    <button class="btn" id="iSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="iDel">Supprimer cet ingrédient</button>` : ""}`, () => {
+    const read = () => ({n: $("iN").value.trim(), u: $("iU").value, prix: num($("iP").value), perte: +$("iL").value});
+    const upd = () => { const x = read(), u = CU_U[x.u], real = x.prix / (1 - x.perte / 100);
+      $("iPl").textContent = `Prix HT par ${u[2]} (€)`; $("iLl").textContent = x.perte + " %";
+      $("iRes").innerHTML = `<div><div class="l">Coût réel par ${u[2]}</div><div class="v h">${eur(real)}</div></div><div><div class="l">Coût par ${u[0]}</div><div class="v h">${eur(real / u[1], u[1] > 1 ? 4 : 2)}</div></div>`; };
+    $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
+    $("iSave").onclick = async () => { const x = read(); if (!x.n) return toast("Donnez un nom à l'ingrédient");
+      $("iSave").classList.add("busy");
+      if (await act(() => actSaveCu("i", id, x), id ? "Ingrédient mis à jour ✓" : "Ingrédient ajouté ✓")) closeSheet(); else $("iSave").classList.remove("busy"); };
+    if (id) armBtn($("iDel"), "Toucher encore : il sera retiré des recettes", async () => { if (await act(() => actDeleteCu("i", id), "Ingrédient supprimé")) closeSheet(); });
+  });
+}
+function linesEditor(box, lines, selfId, upd) { // éditeur de lignes ingrédients / préparations
+  const c = cu(), choices = [...c.i.map(o => ["i:" + o.id, o.n]), ...c.r.filter(r => r.id !== selfId && !(selfId && prepUses(r, selfId))).map(o => ["r:" + o.id, "🥣 " + o.n])];
+  const draw = () => {
+    box.innerHTML = lines.map((l, k) => `<div class="ing cuing"><div class="field"><select data-k="${k}" data-f="s" aria-label="Ingrédient">${opts(choices, l.t + ":" + l.id)}</select></div>
+      <div class="field"><input data-k="${k}" data-f="q" inputmode="decimal" value="${f1x(l.q)}" aria-label="Quantité"></div><span class="cuu">${esc(cuUnit(l.t, l.id))}</span>
+      <button class="x" data-del="${k}" aria-label="Retirer">✕</button></div>`).join("") || `<p class="tip" style="padding:0 0 10px">Aucun ingrédient pour l'instant.</p>`;
+    box.querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const l = lines[+e.dataset.k];
+      if (e.dataset.f === "s") { const [t, ...rest] = e.value.split(":"); l.t = t; l.id = rest.join(":"); draw(); } else l.q = num(e.value); upd(); });
+    box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { lines.splice(+b.dataset.del, 1); draw(); upd(); });
+  };
+  draw();
+  return { add() { if (!choices.length) return toast("Ajoutez d'abord des ingrédients (onglet Ingrédients)");
+    const used = new Set(lines.map(l => l.t + ":" + l.id)), ch = choices.find(([v]) => !used.has(v)) || choices[0], [t, ...rest] = ch[0].split(":");
+    lines.push({t, id: rest.join(":"), q: t === "i" && (cuFind("i", rest.join(":")) || {}).u === "pce" ? 1 : 100}); draw(); upd(); } };
+}
+function prepSheet(id) {
+  if (!cu().i.length) return toast("Ajoutez d'abord des ingrédients (onglet Ingrédients)");
+  const o = id ? cuFind("r", id) : {n: "", rend: 1000, ru: "g", lines: []}; const lines = (o.lines || []).map(l => ({...l}));
+  openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouvelle préparation"}</h2><div class="sub">Une base préparée à l'avance : sauce, pâte, frites maison, fond…</div>
+    <div class="field"><label for="rN">Nom</label><input id="rN" value="${esc(o.n)}" placeholder="Ex : Sauce maison" maxlength="80"></div>
+    <div class="lbl" style="margin-top:4px"><span>Ce qu'il faut pour une fournée</span></div><div id="rL"></div>
+    <button class="btn ghost" id="rAdd" style="margin-bottom:12px">+ Ajouter un ingrédient</button>
+    <div class="two"><div class="field"><label for="rR">Quantité obtenue</label><input id="rR" inputmode="decimal" value="${f1x(o.rend)}"></div>
+    <div class="field"><label for="rU">Unité</label><select id="rU">${opts([["g","grammes"],["cl","centilitres"],["pce","portions / pièces"]], o.ru)}</select></div></div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="rRes"></div></div>
+    <button class="btn" id="rSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="rDel">Supprimer cette préparation</button>` : ""}`, () => {
+    const read = () => ({n: $("rN").value.trim(), rend: num($("rR").value), ru: $("rU").value, lines: lines.filter(l => cuFind(l.t, l.id) && num(l.q) > 0).map(l => ({...l, q: num(l.q)}))});
+    const upd = () => { const x = read(), tot = linesCost(x.lines, new Set(id ? [id] : [])), per = x.rend > 0 ? tot / x.rend : 0, big = x.ru === "g" ? ["kg", 1000] : x.ru === "cl" ? ["L", 100] : ["portion", 1];
+      $("rRes").innerHTML = `<div><div class="l">Coût de la fournée</div><div class="v h">${eur(tot)}</div></div><div><div class="l">Coût par ${big[0]}</div><div class="v h">${eur(per * big[1])}</div></div>`; };
+    const ed = linesEditor($("rL"), lines, id, upd); $("rAdd").onclick = () => ed.add();
+    ["rN", "rR", "rU"].forEach(i => $(i).oninput = upd); upd();
+    $("rSave").onclick = async () => { const x = read(); if (!x.n) return toast("Donnez un nom à la préparation"); if (!(x.rend > 0)) return toast("Indiquez la quantité obtenue");
+      $("rSave").classList.add("busy");
+      if (await act(() => actSaveCu("r", id, x), id ? "Préparation mise à jour ✓" : "Préparation créée ✓")) closeSheet(); else $("rSave").classList.remove("busy"); };
+    if (id) armBtn($("rDel"), "Toucher encore : elle sera retirée des plats", async () => { if (await act(() => actDeleteCu("r", id), "Préparation supprimée")) closeSheet(); });
+  });
+}
+function platSheet(id) {
+  if (!cu().i.length) return toast("Ajoutez d'abord des ingrédients (onglet Ingrédients)");
+  const o = id ? cuFind("d", id) : {n: "", c: "Plat", s: "", tva: 10, x: 0, lines: []}; const lines = (o.lines || []).map(l => ({...l}));
+  openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouveau plat"}</h2><div class="sub">Le coût de l'assiette se calcule ingrédient par ingrédient</div>
+    <div class="field"><label for="dN">Nom du plat</label><input id="dN" value="${esc(o.n)}" placeholder="Ex : Burger maison et frites" maxlength="80"></div>
+    <div class="two"><div class="field"><label for="dC">Catégorie</label><select id="dC">${opts(Object.keys(CU_CATS).map(k => [k, CU_CATS[k] + "  " + k]), o.c)}</select></div>
+    <div class="field"><label for="dS">Prix de vente TTC (€)</label><input id="dS" inputmode="decimal" value="${f1x(o.s)}"></div></div>
+    <div class="field"><label for="dT">TVA</label><select id="dT">${opts([[10,"10 % · sur place ou à emporter à consommer tout de suite"],[5.5,"5,5 % · à emporter pour plus tard, traiteur sans service"],[20,"20 % · avec alcool"]], o.tva)}</select>
+      <div class="tip" style="padding:6px 0 0">Les taux dépendent de votre activité : faites-les confirmer par votre comptable.</div></div>
+    <div class="lbl" style="margin-top:4px"><span>Dans l'assiette</span></div><div id="dL"></div>
+    <button class="btn ghost" id="dAdd" style="margin-bottom:12px">+ Ajouter un ingrédient ou une préparation</button>
+    <div class="field"><label for="dX">Emballage, condiments, pain, divers (€ HT)</label><input id="dX" inputmode="decimal" value="${f1x(o.x)}"></div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="dRes"></div></div>
+    <button class="btn" id="dSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="dDel">Supprimer ce plat</button>` : ""}`, () => {
+    const read = () => ({n: $("dN").value.trim(), c: $("dC").value, s: num($("dS").value), tva: num($("dT").value), x: num($("dX").value), lines: lines.filter(l => cuFind(l.t, l.id) && num(l.q) > 0).map(l => ({...l, q: num(l.q)}))});
+    const upd = () => { const x = read(), k = platCalc(x), T = cuTarget(), sg = suggestPlat(k.cost, k.tva, T);
+      $("dRes").innerHTML = `<div><div class="l">Coût de l'assiette</div><div class="v h">${eur(k.cost)}</div></div><div><div class="l">Gagné par assiette</div><div class="v h">${eur(k.marg)}</div></div>
+        <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(k.rate, T)}">${pct(k.rate)}</div><div style="font-size:12px;color:var(--mut)">coût matière ${pct(k.ht > 0 ? k.cost / k.ht * 100 : NaN)}</div></div>
+        <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(k.rate) && k.rate < T ? `<button class="mini" id="useSgD">Utiliser</button>` : ""}</div>${chBlock(k, k.tva, "dS", upd, "assiette")}`;
+      const u = $("useSgD"); if (u) u.onclick = () => { $("dS").value = f1x(sg); upd(); }; armCh("dS", upd); };
+    const ed = linesEditor($("dL"), lines, null, upd); $("dAdd").onclick = () => ed.add();
+    ["dN", "dC", "dS", "dT", "dX"].forEach(i => $(i).oninput = upd); upd();
+    $("dSave").onclick = async () => { const x = read(); if (!x.n) return toast("Donnez un nom au plat"); if (!x.lines.length) return toast("Ajoutez au moins un ingrédient");
+      $("dSave").classList.add("busy");
+      if (await act(() => actSaveCu("d", id, x), id ? "Plat mis à jour ✓" : "Plat créé ✓")) closeSheet(); else $("dSave").classList.remove("busy"); };
+    if (id) armBtn($("dDel"), "Toucher encore pour supprimer", async () => { if (await act(() => actDeleteCu("d", id), "Plat supprimé")) closeSheet(); });
+  });
+}
+const METIERS = [["bar","Bar"],["bar-resto","Bar-restaurant"],["resto","Restaurant"],["fastfood","Restauration rapide"],["traiteur","Traiteur"]];
+function restoSheet() {
+  const r = Object.assign({on: false, metier: "bar-resto", target: 70}, S.resto || {});
+  openSheet(`<h2 class="h">Option Restauration</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
+    <div class="field"><label for="roM">Votre activité</label><select id="roM">${opts(METIERS.filter(m => m[0] !== "bar"), r.metier)}</select></div>
+    <div class="field"><label for="roT">Objectif de marge cuisine : <b id="roTl" style="color:var(--amber2)">${r.target} %</b></label><input id="roT" class="range" type="range" min="50" max="85" value="${r.target}">
+      <div class="tip" style="padding:6px 0 0">70 % de marge = 30 % de coût matière, un repère courant en restauration.</div></div>
+    <button class="btn" id="roSave">${r.on ? "Enregistrer" : "Activer l'option Restauration"}</button>
+    ${r.on ? `<div class="gap"></div><button class="btn danger" id="roOff">Désactiver l'option</button><p class="tip" style="padding:8px 0 0">Vos fiches sont conservées si vous la réactivez.</p>` : ""}`, () => {
+    $("roT").oninput = () => $("roTl").textContent = $("roT").value + " %";
+    $("roSave").onclick = async () => { $("roSave").classList.add("busy");
+      const x = {on: true, metier: $("roM").value, target: +$("roT").value};
+      if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Option Restauration activée ✓")) { closeSheet(); if (!r.on) { menuKind = "c"; cuTab = MODE === "demo" ? "d" : "i"; go("menu"); } }
+      else $("roSave").classList.remove("busy"); };
+    if ($("roOff")) armBtn($("roOff"), "Toucher encore pour désactiver", async () => { if (await act(() => actResto({...r, on: false}), "Option désactivée")) closeSheet(); });
+  });
+}
+
 /* ================= Charges fixes ================= */
-function chBlock(c, alc, field, upd) {
+function chBlock(c, alc, field, upd, unit = "verre") {
   if (!chOn() || !(c.ht > 0)) return "";
-  const sg = suggestNet(c.cost, alc), mn = minPrice(c.cost, alc), col = c.net < 0 ? "var(--bad)" : c.netRate >= netTarget() ? "var(--ok)" : "var(--amber)";
+  const sg = suggestNet(c.cost, c.tva), mn = minPrice(c.cost, c.tva), col = c.net < 0 ? "var(--bad)" : c.netRate >= netTarget() ? "var(--ok)" : "var(--amber)";
   return `<div class="chsep" style="grid-column:1/-1">Avec vos charges fixes</div>
-    <div><div class="l">Charges par verre</div><div class="v h">${eur(c.ch)}</div></div><div><div class="l">Coût de revient réel</div><div class="v h">${eur(c.full)}</div></div>
-    <div><div class="l">Bénéfice réel par verre</div><div class="v h" style="color:${col}">${eur(c.net)}</div><div style="font-size:12px;color:${col};font-weight:600">${pct(c.netRate)}${c.net < 0 ? " · vendu à perte" : ""}</div></div>
+    <div><div class="l">Charges par ${unit}</div><div class="v h">${eur(c.ch)}</div></div><div><div class="l">Coût de revient réel</div><div class="v h">${eur(c.full)}</div></div>
+    <div><div class="l">Bénéfice réel par ${unit}</div><div class="v h" style="color:${col}">${eur(c.net)}</div><div style="font-size:12px;color:${col};font-weight:600">${pct(c.netRate)}${c.net < 0 ? " · vendu à perte" : ""}</div></div>
     <div><div class="l">Prix minimum TTC</div><div class="v h">${eur(mn)}</div></div>
     <div style="grid-column:1/-1"><div class="l">Prix conseillé pour ${netTarget()} % de bénéfice réel</div><div class="v h">${eur(sg)}</div>${field && c.netRate < netTarget() ? `<button class="mini" data-usech="${sg}">Utiliser ce prix</button>` : ""}</div>`;
 }
@@ -914,7 +1107,7 @@ function chargesSheet() {
   const c = Object.assign({v: "", net: 15}, S.ch || {}), real = realVolume();
   openSheet(`<h2 class="h">Mes charges fixes</h2><div class="sub">Par mois, hors taxes. Elles sont réparties sur chaque verre vendu pour calculer votre bénéfice réel. Vos barmen ne les voient pas.</div>
     ${CH_LINES.map(([k, l]) => `<div class="field"><label for="ch_${k}">${l}</label><div class="eurin"><input id="ch_${k}" inputmode="decimal" value="${f1x(c[k] ?? "")}" placeholder="0"><span>€</span></div>${k === "salaires" ? `<button type="button" class="link" id="chSal" style="padding:6px 0 0;font-size:12px">Calculer avec les heures de travail</button><div id="chSalBox" hidden class="two" style="margin-top:8px"><div class="field"><label for="chH">Heures par mois (toute l'équipe)</label><input id="chH" inputmode="decimal" placeholder="Ex : 300"></div><div class="field"><label for="chT">Coût horaire chargé (€)</label><input id="chT" inputmode="decimal" placeholder="Ex : 18"></div></div>` : ""}</div>`).join("")}
-    <div class="field"><label for="ch_v">Verres vendus par mois (toute la carte)</label><input id="ch_v" inputmode="decimal" value="${f1x(c.v)}" placeholder="Ex : 3000">
+    <div class="field"><label for="ch_v">${restoOn() ? "Verres et plats vendus par mois" : "Verres vendus par mois (toute la carte)"}</label><input id="ch_v" inputmode="decimal" value="${f1x(c.v)}" placeholder="Ex : 3000">
       ${real ? `<button type="button" class="link" id="chReal" style="padding:6px 0 0;font-size:12px">Utiliser mes ventes réelles : environ ${real.toLocaleString("fr-FR")} verres par mois</button>` : `<div class="tip" style="padding:6px 0 0">Une estimation suffit pour commencer. Après quelques services, Dosis Bar vous proposera le vrai chiffre.</div>`}</div>
     <div class="field"><label for="ch_net">Bénéfice réel visé : <b id="ch_netl" style="color:var(--amber2)">${num(c.net)} %</b></label><input id="ch_net" class="range" type="range" min="0" max="40" value="${num(c.net)}"></div>
     <div class="card" style="background:var(--card2)"><div class="res" id="chRes"></div></div>
@@ -954,9 +1147,10 @@ function settingsSheet() {
     <div class="field"><label for="sT2">Objectif bouteilles et canettes servies entières (bière, soft, eau) : <b id="sT2l" style="color:var(--amber2)">${S.target2 ?? 65} %</b></label><input id="sT2" class="range" type="range" min="40" max="85" value="${S.target2 ?? 65}"></div>
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
     <button class="btn" id="sSave">Enregistrer</button>
-    <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>
+    <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet;
+    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
