@@ -31,3 +31,7 @@ create policy paiements_lire on public.paiements for select to authenticated usi
 revoke all on public.paiements from anon;
 revoke insert, update, delete on public.paiements from authenticated;
 grant select on public.paiements to authenticated;
+
+-- Droits du rôle serveur (fonctions Edge abonnement / mollie-webhook)
+grant select on public.membres, public.etablissements to service_role;
+grant select, insert, update, delete on public.abonnements, public.paiements to service_role;
