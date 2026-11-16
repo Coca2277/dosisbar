@@ -323,3 +323,15 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .cline .grow .name{white-space:normal}
 .res.bil .s{font-size:12px;color:var(--mut);margin-top:3px}
 #biM{margin-bottom:12px}
+/* Formats de vente */
+.fmtbox{background:var(--card2);border:1px solid var(--line);border-radius:16px;padding:12px 12px 4px;margin:4px 0 14px}
+.fmrow{display:grid;grid-template-columns:1fr 58px 66px 40px 34px;gap:6px;align-items:end;margin-bottom:8px}
+.fmrow.fmmain{grid-template-columns:1fr 58px 66px 40px 34px}
+.fmrow > input,.fmrow .field input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--txt);font:inherit;font-size:14px;padding:9px 8px}
+.fmrow .field{margin:0}
+.fmrow .field label{font-size:11px}
+.fmrow .x{height:38px}
+.fmr{font-size:12px;font-weight:700;text-align:right;padding-bottom:11px;font-variant-numeric:tabular-nums}
+.fmadd{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fmadd .chip{margin:0}
+#fmTypes{display:contents}

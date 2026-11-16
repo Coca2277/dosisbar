@@ -15,7 +15,13 @@ const isPatron = () => MODE === "demo" || (ETAB && ETAB.role === "patron");
 const isBarman = () => MODE === "cloud" && ETAB && ETAB.role === "barman";
 
 /* ================= Données ================= */
-const CATS = {Rhum:"🥃",Whisky:"🥃",Gin:"🍸",Vodka:"🍸",Anisé:"🌿",Bière:"🍺",Vin:"🍷",Soft:"🥤",Jus:"🍊",Sirop:"🍒",Eau:"💧",Autre:"🍶"};
+const CATS = {Rhum:"🥃",Whisky:"🥃",Gin:"🍸",Vodka:"🍸",Anisé:"🌿",Liqueur:"🥃",Bière:"🍺","Bière pression":"🍺",Cidre:"🍏",Vin:"🍷",Champagne:"🍾",Soft:"🥤",Jus:"🍊",Sirop:"🍒",Eau:"💧",Autre:"🍶"};
+/* Formats de vente types, par catégorie : [nom, cl (0 = toute la bouteille)] */
+const FMT_TYPES = {Vin: [["Verre 12 cl", 12], ["Pichet 25 cl", 25], ["Pichet 50 cl", 50], ["Bouteille", 0]], Champagne: [["Coupe 12 cl", 12], ["Bouteille", 0]],
+  "Bière pression": [["Galopin 12,5 cl", 12.5], ["Demi 25 cl", 25], ["Pinte 50 cl", 50], ["Pichet 1 L", 100]], Cidre: [["Bolée 25 cl", 25], ["Bouteille", 0]],
+  _spirit: [["Double", -2], ["Bouteille (VIP)", 0]], Soft: [["Verre 25 cl", 25], ["Carafe 1 L", 100]], Jus: [["Verre 25 cl", 25], ["Carafe 1 L", 100]]};
+const SPIRITS = ["Rhum", "Whisky", "Gin", "Vodka", "Anisé", "Liqueur"];
+const contName = p => p && p.c === "Bière pression" ? "fût" : "bouteille";
 const KEY = "dosisbar.v2", QKEY = "dosisbar.queue", CKEY = "dosisbar.cache", EKEY = "dosisbar.etab", MKEY = "dosisbar.mode";
 const SAMPLE_P = [
   {n:"Rhum Ambré Caribe",c:"Rhum",a:1,b:15,cap:70,d:5,s:7,st:2,m:3},
@@ -24,6 +30,8 @@ const SAMPLE_P = [
   {n:"Vodka Nordik",c:"Vodka",a:1,b:16,cap:70,d:4,s:6.5,st:1,m:2},
   {n:"Pastis Provence",c:"Anisé",a:1,b:14,cap:100,d:2,s:4,st:6,m:2},
   {n:"Bière Artisanale Blonde",c:"Bière",a:1,b:2.4,cap:33,d:33,s:6,st:24,m:24,al:["gluten"]},
+  {n:"Bière pression blonde",c:"Bière pression",a:1,b:95,cap:3000,d:25,s:4,st:2,m:1,al:["gluten"],fn:"Demi 25 cl",pt:8,fm:[{id:"fmd1",n:"Pinte 50 cl",d:50,s:7.5},{id:"fmd2",n:"Galopin 12,5 cl",d:12.5,s:2.5},{id:"fmd3",n:"Pichet 1 L",d:100,s:14}]},
+  {n:"Côtes-du-Rhône rouge",c:"Vin",a:1,b:6.5,cap:75,d:12,s:5,st:12,m:6,al:["sulfites"],fn:"Verre 12 cl",pt:4,fm:[{id:"fmd4",n:"Pichet 25 cl",d:25,s:9},{id:"fmd5",n:"Pichet 50 cl",d:50,s:16},{id:"fmd6",n:"Bouteille",d:75,s:26}]},
   {n:"Coca-Cola 33cl",c:"Soft",a:0,b:0.9,cap:33,d:33,s:4.5,st:48,m:24},
   {n:"Jus d'orange pressé",c:"Jus",a:0,b:3.2,cap:100,d:20,s:4.5,st:6,m:3},
   {n:"Sirop de Grenadine",c:"Sirop",a:0,b:6,cap:100,d:3,s:2.5,st:3,m:1},
@@ -78,7 +86,7 @@ const byId = id => S.products.find(p => String(p.id) === String(id));
 const ceil10 = x => Math.ceil(x * 10 - 1e-9) / 10;
 const tone = (r, t = S.target) => r >= t ? "var(--ok)" : r >= t - 10 ? "var(--amber)" : "var(--bad)";
 const tgtP = p => p && p.d >= p.cap ? (S.target2 ?? 65) : S.target;
-const tgtI = i => i.kind === "p" ? tgtP(i.o) : S.target;
+const tgtI = i => i.kind === "p" || i.kind === "f" ? tgtP(i.o) : S.target;
 function frErr(e) {
   const m = (e && (e.message || e.error_description)) || String(e);
   if (/Invalid login credentials/i.test(m)) return "Email ou mot de passe incorrect.";
@@ -93,7 +101,7 @@ function frErr(e) {
 const isNetErr = e => !navigator.onLine || /fetch|network|Load failed|NetworkError/i.test((e && e.message) || "");
 
 /* ================= Calculs ================= */
-const pcost = (p, cl) => p && p.cap > 0 ? p.b / p.cap * cl : 0;
+const pcost = (p, cl) => p && p.cap > 0 ? p.b / p.cap * cl / (1 - Math.min(60, Math.max(0, num(p.pt))) / 100) : 0;
 /* Charges fixes : réparties de façon égale sur chaque verre vendu */
 const CH_LINES = [["loyer","Loyer et charges locatives"],["energie","Électricité, chauffage, eau"],["salaires","Salaires chargés (barmen, extras)"],
   ["assur","Assurances"],["compta","Comptable et banque"],["abo","Abonnements (caisse, internet, logiciels)"],["pret","Remboursement de prêt"],["autres","Autres charges"]];
@@ -199,7 +207,11 @@ function seedCuisine() {
     {id: "cd" + (t + 2), n: "Portion de frites", c: "Accompagnement", s: 4.5, tva: 10, x: 0.08, lines: [{t:"r",id:r[0].id,q:180}]}];
   return {i, r, d};
 }
-function allItems() { return [...S.products.map(p => ({key:"p"+p.id,kind:"p",o:p,c:prodCalc(p)})),
+const fmObj = (p, f) => ({id: f.id, n: p.n + " · " + f.n, s: f.s, c: p.c, a: p.a, d: f.d, cap: p.cap, b: p.b, pt: p.pt, st: p.st, m: p.m, al: p.al, pid: p.id, fm0: f});
+function fmById(fid) { for (const p of S.products) { const f = (p.fm || []).find(x => x.id === fid); if (f) return {p, f}; } return null; }
+const pName = p => p.fn && (p.fm || []).length ? p.n + " · " + p.fn : p.n;
+function allItems() { return [...S.products.flatMap(p => [{key:"p"+p.id,kind:"p",o:p,c:prodCalc(p)},
+                               ...(p.fm || []).map(f => { const o = fmObj(p, f); return {key: "f" + f.id, kind: "f", o, c: prodCalc(o)}; })]),
                              ...S.cocktails.map(k => ({key:"k"+k.id,kind:"k",o:k,c:cockCalc(k)}))]; }
 function opportunities() {
   return allItems().filter(i => i.c.rate < tgtI(i) && i.c.ht > 0).map(i => {
@@ -236,10 +248,10 @@ function bottle(level, col) { const id = "bt" + (++gid), l = Math.max(0, Math.mi
   return `<svg width="30" height="38" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="${id}"><path d="${BOTTLE}"/></clipPath></defs><g clip-path="url(#${id})"><rect width="40" height="50" fill="rgba(244,237,228,.05)"/><rect x="0" y="${y}" width="40" height="50" fill="${col}"/></g><path d="${BOTTLE}" fill="none" stroke="rgba(244,237,228,.4)" stroke-width="1.6" stroke-linejoin="round"/></svg>`; }
 
 /* ================= Base en ligne : lecture ================= */
-const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[],f:r.fournisseur_id||""});
+const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[],f:r.fournisseur_id||"",fn:r.format_nom||"",pt:+r.perte_pct||0,fm:[]});
 const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,allergenes:p.al||[],
   prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString(),
-  ...("f" in p ? {fournisseur_id: p.f || null} : {})});
+  ...("f" in p ? {fournisseur_id: p.f || null} : {}), ...("fn" in p ? {format_nom: p.fn || null} : {}), ...("pt" in p ? {perte_pct: num(p.pt)} : {})});
 async function q(promise) { const r = await promise; if (r.error) throw r.error; return r.data; }
 let lastLoad = 0;
 async function loadCloud() {
@@ -256,8 +268,9 @@ async function loadCloud() {
       q(sb.from("services").select("ouvert_le,ca_ttc,marge_ht,verres,pertes").eq("etab_id", e).not("clos_le", "is", null).order("ouvert_le", {ascending: false}).limit(14)),
       q(sb.from("inventaires").select("le,perte_ventes_ht").eq("etab_id", e).order("le", {ascending: false}).limit(1))]);
     const ci = ck.length ? await q(sb.from("cocktail_ingredients").select("cocktail_id,produit_id,cl").in("cocktail_id", ck.map(c => c.id))) : [];
+    let pf = []; try { pf = await q(sb.from("produit_formats").select("id,produit_id,nom,dose_cl,prix_ttc,ordre").eq("etab_id", e).order("ordre")); } catch (x) {}
     Object.assign(S, {bar: et.nom, target: et.objectif_spiritueux, target2: et.objectif_bouteilles, vol: et.volume_mois,
-      products: pr.map(fromDbP),
+      products: pr.map(fromDbP).map(p => ({...p, fm: pf.filter(f => f.produit_id === p.id).map(f => ({id: f.id, n: f.nom, d: +f.dose_cl, s: +f.prix_ttc}))})),
       cocktails: ck.map(c => ({id:c.id,n:c.nom,s:+c.prix_vente_ttc,x:+c.extras_ht,
         ing: ci.filter(i => i.cocktail_id === c.id).map(i => ({p:i.produit_id,cl:+i.cl}))})),
       history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres,pertes:s.pertes||null})),
@@ -332,16 +345,35 @@ async function act(fn, okMsg) {
 }
 const cloud = () => MODE === "cloud";
 async function actSaveProduct(id, x) {
+  const fm = x.fm; x = {...x}; delete x.fm;
   if (cloud()) {
     if (id) { await q(sb.from("produits").update(toDbP(x)).eq("id", id)); Object.assign(byId(id), x); }
-    else { const r = await q(sb.from("produits").insert(toDbP(x)).select().single()); S.products.unshift(fromDbP(r)); }
-  } else { if (id) Object.assign(byId(id), x); else S.products.unshift({id: "d" + Date.now(), ...x}); }
+    else { const r = await q(sb.from("produits").insert(toDbP(x)).select().single()); S.products.unshift(fromDbP(r)); id = r.id; }
+  } else { if (id) Object.assign(byId(id), x); else { id = "d" + Date.now(); S.products.unshift({id, ...x, fm: []}); } }
+  if (fm) await actSaveFormats(id, fm);
+}
+async function actSaveFormats(pid, list) {
+  const p = byId(pid), old = p.fm || [], keep = list.filter(f => f.id && !String(f.id).startsWith("n"));
+  if (cloud()) {
+    const gone = old.filter(o => !keep.some(f => f.id === o.id)).map(o => o.id);
+    if (gone.length) await q(sb.from("produit_formats").delete().in("id", gone));
+    for (const [k, f] of list.entries()) {
+      const row = {nom: f.n, dose_cl: f.d, prix_ttc: f.s, ordre: k};
+      if (f.id && !String(f.id).startsWith("n")) await q(sb.from("produit_formats").update(row).eq("id", f.id));
+      else f.id = (await q(sb.from("produit_formats").insert({...row, etab_id: ETAB.id, produit_id: pid}).select("id").single())).id;
+    }
+  } else list.forEach(f => { if (!f.id || String(f.id).startsWith("n")) f.id = "fm" + Date.now() + Math.random().toString(36).slice(2, 6); });
+  for (const o of old) if (!list.some(f => f.id === o.id)) for (const k in S.live) if (liveSplit(k)[0] === "f" + o.id) delete S.live[k];
+  p.fm = list.map(f => ({id: f.id, n: f.n, d: f.d, s: f.s}));
 }
 async function actDeleteProduct(id) {
   if (cloud()) await q(sb.from("produits").delete().eq("id", id));
+  const fidsDel = ((byId(id) || {}).fm || []).map(f => "f" + f.id);
+  for (const k in S.live) if (fidsDel.includes(liveSplit(k)[0])) delete S.live[k];
   S.products = S.products.filter(x => x.id !== id);
   S.cocktails.forEach(k => k.ing = k.ing.filter(g => g.p !== id));
-  for (const k in S.live) if (liveSplit(k)[0] === "p" + id) delete S.live[k];
+  const fids = ((S.products.find(x => x.id === id) || {}).fm || []).map(f => "f" + f.id);
+  for (const k in S.live) if (liveSplit(k)[0] === "p" + id || fids.includes(liveSplit(k)[0])) delete S.live[k];
 }
 async function actSaveCocktail(id, x) {
   if (cloud()) {
@@ -360,8 +392,9 @@ async function actDeleteCocktail(id) {
 }
 async function actSetPrices(list) { // [{kind, o, price}]
   if (cloud()) for (const it of list)
-    await q(sb.from(it.kind === "p" ? "produits" : "cocktails").update({prix_vente_ttc: it.price, modifie_le: new Date().toISOString()}).eq("id", it.o.id));
-  list.forEach(it => it.o.s = it.price);
+    await q(it.kind === "f" ? sb.from("produit_formats").update({prix_ttc: it.price}).eq("id", it.o.id)
+      : sb.from(it.kind === "p" ? "produits" : "cocktails").update({prix_vente_ttc: it.price, modifie_le: new Date().toISOString()}).eq("id", it.o.id));
+  list.forEach(it => { it.o.s = it.price; if (it.o.fm0) it.o.fm0.s = it.price; });
 }
 async function actSetCode(id, code) {
   if (cloud()) await q(sb.from("produits").update({code_barre: code, modifie_le: new Date().toISOString()}).eq("id", id));
@@ -616,14 +649,14 @@ function renderMenu() {
   let it = allItems().filter(i => i.kind === menuKind && i.o.n.toLowerCase().includes(qs) && (menuKind === "k" || cat === "Toutes" || i.o.c === cat));
   it.sort((a, b) => sortBy === "name" ? a.o.n.localeCompare(b.o.n) : sortBy === "rate" ? b.c.rate - a.c.rate : b.c.marg - a.c.marg);
   $("menuList").innerHTML = it.length ? it.map(i => { const t = tgtI(i), st = status(i.c, i.kind === "p" ? i.o : null, t);
-    const meta = (i.kind === "p" ? `${f1(i.o.d)} cl · ${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}`
+    const meta = (i.kind === "p" ? `${i.o.fn && (i.o.fm || []).length ? esc(i.o.fn) + " · " : f1(i.o.d) + " cl · "}${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}${(i.o.fm || []).length ? ` · +${i.o.fm.length} format${i.o.fm.length > 1 ? "s" : ""}` : ""}`
       : `${i.o.ing.map(g => { const p = byId(g.p); return p ? p.n.split(" ")[0] : "?"; }).join(" + ")} · ${eur(i.o.s)}`)
       ;
     return `<div class="row tap" data-k="${i.key}"><div style="flex:none">${glass(i.c.rate / 100, {w:26, col:tone(i.c.rate, t)})}</div>
     <div class="grow"><div class="name">${esc(i.o.n)}</div><div class="meta">${esc(meta)}</div></div>
     <div class="right"><div class="m h">${eur(i.c.marg)}</div>${chOn() && i.c.ht > 0 ? `<div style="font-size:12px;font-weight:600;color:${i.c.net < 0 ? "var(--bad)" : i.c.netRate >= netTarget() ? "var(--ok)" : "var(--amber)"}">réel ${eur(i.c.net)}</div>` : `<div style="font-size:12px;color:${tone(i.c.rate, t)};font-weight:600">${pct(i.c.rate)}</div>`}<span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("")
     : `<div class="empty">${menuKind === "k" ? "Aucun cocktail. Touchez + pour créer votre première recette." : S.products.length ? "Aucun produit trouvé" : "Votre carte est vide. Touchez + pour ajouter votre premier produit."}</div>`;
-  $("menuList").querySelectorAll("[data-k]").forEach(r => r.onclick = () => { const k = r.dataset.k; k[0] === "p" ? productSheet(k.slice(1)) : cocktailSheet(k.slice(1)); });
+  $("menuList").querySelectorAll("[data-k]").forEach(r => r.onclick = () => { const k = r.dataset.k; k[0] === "p" ? productSheet(k.slice(1)) : k[0] === "f" ? productSheet((fmById(k.slice(1)) || {p: {}}).p.id) : cocktailSheet(k.slice(1)); });
 }
 $("fab").onclick = () => menuKind === "p" ? productSheet(null) : menuKind === "k" ? cocktailSheet(null) : cuTab === "d" ? platSheet(null) : cuTab === "r" ? prepSheet(null) : ingSheet(null);
 
@@ -632,12 +665,13 @@ let svcCat = "Tout";
 function consume(key, dir) {
   const id = key.slice(1);
   if (key[0] === "p") { const p = byId(id); if (p) p.st = Math.max(0, p.st - dir * p.d / p.cap); }
+  else if (key[0] === "f") { const x = fmById(id); if (x) x.p.st = Math.max(0, x.p.st - dir * x.f.d / x.p.cap); }
   else { const k = S.cocktails.find(c => c.id === id); if (k) k.ing.forEach(g => { const p = byId(g.p); if (p) p.st = Math.max(0, p.st - dir * g.cl / p.cap); }); }
 }
 function serviceItems() {
   if (isBarman()) return (S.carte || []).map(c => ({key: c.key, kind: c.kind, n: c.n, c: c.c, s: c.s, out: !c.dispo}));
-  return allItems().map(i => ({key: i.key, kind: i.kind, n: i.o.n, c: i.kind === "k" ? "Cocktails" : i.o.c, s: i.o.s,
-    out: i.kind === "p" ? i.o.st * i.o.cap < i.o.d : i.o.ing.some(g => { const p = byId(g.p); return p && p.st * p.cap < g.cl; })}));
+  return allItems().map(i => ({key: i.key, kind: i.kind, n: i.kind === "p" ? pName(i.o) : i.o.n, c: i.kind === "k" ? "Cocktails" : i.o.c, s: i.o.s,
+    out: i.kind === "p" || i.kind === "f" ? i.o.st * i.o.cap < i.o.d : i.o.ing.some(g => { const p = byId(g.p); return p && p.st * p.cap < g.cl; })}));
 }
 function renderService() {
   const t = liveTotals(), barman = isBarman();
@@ -1018,19 +1052,50 @@ function productSheet(id, preset) {
     <div class="two">
       <div class="field"><label for="fC">Catégorie</label><select id="fC">${opts(Object.keys(CATS).map(c => [c, CATS[c] + "  " + c]), p.c)}</select></div>
       <div class="field"><label for="fA">Type</label><select id="fA">${opts([[1,"Alcool · 20 %"],[0,"Sans alcool · 10 %"]], p.a)}</select></div>
-      <div class="field"><label for="fB">Prix bouteille HT (€)</label><input id="fB" inputmode="decimal" value="${p.b === "" ? "" : f1x(p.b)}"></div>
-      <div class="field"><label for="fCap">Contenance (cl)</label><input id="fCap" inputmode="decimal" value="${f1x(p.cap)}"></div>
-      <div class="field"><label for="fD">Dose servie (cl)</label><input id="fD" inputmode="decimal" value="${f1x(p.d)}"></div>
-      <div class="field"><label for="fS">Prix de vente TTC (€)</label><input id="fS" inputmode="decimal" value="${p.s === "" ? "" : f1x(p.s)}"></div>
-      <div class="field"><label for="fSt">Stock (bouteilles)</label><input id="fSt" inputmode="decimal" value="${f1x(p.st)}"></div>
+      <div class="field"><label for="fB" id="fBl">Prix ${contName(p) === "fût" ? "du fût" : "bouteille"} HT (€)</label><input id="fB" inputmode="decimal" value="${p.b === "" ? "" : f1x(p.b)}"></div>
+      <div class="field"><label for="fCap">Contenance (cl)</label><input id="fCap" inputmode="decimal" value="${f1x(p.cap)}"><div class="tip" id="fCapT" style="padding:4px 0 0">${contName(p) === "fût" ? "Fût de 30 L = 3000 cl" : ""}</div></div>
+    </div>
+    <div class="fmtbox">
+      <div class="lbl" style="margin:2px 0 8px"><span>Formats de vente</span></div>
+      <div class="fmrow fmmain"><input id="fFn" value="${esc(p.fn || "")}" placeholder="Verre, demi…" maxlength="40" aria-label="Nom du format principal">
+        <div class="field"><label for="fD">cl servis</label><input id="fD" inputmode="decimal" value="${f1x(p.d)}"></div>
+        <div class="field"><label for="fS">Prix TTC</label><input id="fS" inputmode="decimal" value="${p.s === "" ? "" : f1x(p.s)}"></div><span class="fmr" id="fmr_main"></span></div>
+      <div id="fmL"></div>
+      <div class="fmadd"><button type="button" class="mini ghostmini" id="fmAdd">+ Ajouter un format</button><span id="fmTypes"></span></div>
+      <div class="field" style="margin-top:12px"><label for="fPt">Perte au service : <b id="fPtl" style="color:var(--amber2)">${f1(num(p.pt))} %</b></label><input id="fPt" class="range" type="range" min="0" max="20" step="1" value="${num(p.pt)}">
+        <div class="tip" style="padding:4px 0 0">Mousse et purge du fût (5 à 10 %), vin ouvert qui s'oxyde (3 à 5 %). Comptée dans le coût de chaque verre.</div></div>
+    </div>
+    <div class="two">
+      <div class="field"><label for="fSt" id="fStl">Stock (${contName(p)}s)</label><input id="fSt" inputmode="decimal" value="${f1x(p.st)}"></div>
       <div class="field"><label for="fM">Stock minimum</label><input id="fM" inputmode="decimal" value="${f1x(p.m)}"></div>
       ${fours().length ? `<div class="field"><label for="fF">Fournisseur</label><select id="fF">${opts([["", "— Aucun —"], ...fours().map(f => [f.id, f.n])], p.f || "")}</select></div>` : ""}
     </div>
     <div class="field"><label>Allergènes (sulfites pour le vin, gluten pour la bière…)</label>${algChips(p.al || [])}</div>
     <div class="card" style="background:var(--card2)"><div class="res" id="fRes"></div></div>
     <button class="btn" id="fSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="fDel">Supprimer ce produit</button>` : ""}`, () => {
-    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead(),...($("fF") ? {f: $("fF").value} : {})});
+    let fm = (p.fm || []).map(f => ({...f}));
+    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead(),...($("fF") ? {f: $("fF").value} : {}),
+      fn: $("fFn").value.trim(), pt: +$("fPt").value, fm: fm.filter(f => f.n && f.d > 0).map(f => ({...f}))});
     algArm();
+    const fmDraw = () => {
+      $("fmL").innerHTML = fm.map((f, k) => `<div class="fmrow"><input data-k="${k}" data-f="n" value="${esc(f.n)}" placeholder="Nom" maxlength="40" aria-label="Nom du format">
+        <div class="field"><input data-k="${k}" data-f="d" inputmode="decimal" value="${f1x(f.d)}" aria-label="Centilitres servis"></div>
+        <div class="field"><input data-k="${k}" data-f="s" inputmode="decimal" value="${f1x(f.s)}" aria-label="Prix TTC"></div><span class="fmr" id="fmr_${k}"></span>
+        <button type="button" class="x" data-del="${k}" aria-label="Retirer ce format">✕</button></div>`).join("");
+      $("fmL").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const f = fm[+e.dataset.k]; f[e.dataset.f] = e.dataset.f === "n" ? e.value : num(e.value); upd(); });
+      $("fmL").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { fm.splice(+b.dataset.del, 1); fmDraw(); upd(); });
+      const x = read(), types = FMT_TYPES[x.c] || (SPIRITS.includes(x.c) ? FMT_TYPES._spirit : []);
+      $("fmTypes").innerHTML = types.filter(([n]) => !fm.some(f => f.n === n) && n !== x.fn).map(([n, cl]) => `<button type="button" class="chip" data-t="${esc(n)}" data-cl="${cl}">+ ${esc(n)}</button>`).join("");
+      $("fmTypes").querySelectorAll("[data-t]").forEach(b => b.onclick = () => { const y = read(), cl = +b.dataset.cl, d = cl === 0 ? y.cap : cl < 0 ? y.d * -cl : cl;
+        const c0 = pcost(y, d), sg = d >= y.cap ? suggest(c0, !!y.a, S.target2 ?? 65) : suggest(c0, !!y.a, S.target);
+        fm.push({id: "n" + Date.now(), n: b.dataset.t === "Bouteille" || b.dataset.t === "Bouteille (VIP)" ? b.dataset.t : b.dataset.t, d, s: sg}); fmDraw(); upd(); });
+    };
+    $("fmAdd").onclick = () => { fm.push({id: "n" + Date.now(), n: "", d: read().d, s: read().s}); fmDraw(); upd(); const i = $("fmL").querySelector(`[data-k="${fm.length - 1}"][data-f="n"]`); if (i) i.focus(); };
+    const fmRates = x => { const t = (d, s) => { const c = prodCalc({...x, d, s}), T = d >= x.cap ? (S.target2 ?? 65) : S.target; return `<span style="color:${tone(c.rate, T)}">${pct(c.rate)}</span>`; };
+      $("fmr_main").innerHTML = x.d > 0 && x.s > 0 ? t(x.d, x.s) : ""; fm.forEach((f, k) => { const e = $("fmr_" + k); if (e) e.innerHTML = f.d > 0 && f.s > 0 ? t(f.d, f.s) : ""; });
+      $("fPtl").textContent = x.pt + " %"; const cn = contName(x);
+      $("fBl").textContent = `Prix ${cn === "fût" ? "du fût" : "bouteille"} HT (€)`; $("fStl").textContent = `Stock (${cn}s)`; $("fCapT").textContent = cn === "fût" ? "Fût de 30 L = 3000 cl" : ""; };
+    fmDraw();
     const scanFill = () => openScanner("Visez le code-barres de la bouteille", async code => {
       closeScanner(); $("fCode").value = code;
       const other = S.products.find(x => x.code === code && x.id !== id);
@@ -1047,14 +1112,16 @@ function productSheet(id, preset) {
       upd(); setTimeout(() => ($("fN").value ? $("fB") : $("fN")).focus(), 300);
     });
     $("fScan").onclick = scanFill; if ($("fScanTop")) $("fScanTop").onclick = scanFill;
-    const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T);
-      $("fRes").innerHTML = `<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
+    const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T); fmRates(x);
+      if (document.activeElement === $("fC")) fmDraw();
+      $("fRes").innerHTML = `${fm.length ? `<div style="grid-column:1/-1" class="l">Format principal${x.fn ? " : " + esc(x.fn) : ""}</div>` : ""}<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
       <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate, T)}">${pct(c.rate)}</div></div>
       <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>${zonesLine(x.s, c)}${chBlock(c, !!x.a, "fS", upd)}`;
       const u = $("useSg"); if (u) u.onclick = () => { $("fS").value = f1x(sg); upd(); }; armCh("fS", upd); };
-    $("sBody").querySelectorAll("input,select").forEach(e => e.oninput = upd); upd();
+    $("sBody").querySelectorAll("input,select").forEach(e => { if (!e.dataset.f) e.oninput = upd; }); $("fC").onchange = () => { fmDraw(); upd(); }; upd();
     $("fSave").onclick = async () => { const x = read();
       if (!x.n) return toast("Donnez un nom au produit");
+      if (fm.some(f => !f.n || !(f.d > 0))) return toast("Chaque format a besoin d'un nom et d'une quantité");
       if (!(x.cap > 0 && x.d > 0)) return toast("Contenance et dose obligatoires");
       $("fSave").classList.add("busy");
       if (await act(() => actSaveProduct(id, x), id ? "Produit mis à jour ✓" : "Produit ajouté ✓")) closeSheet();
