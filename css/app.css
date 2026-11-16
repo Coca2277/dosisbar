@@ -335,3 +335,12 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .fmadd{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .fmadd .chip{margin:0}
 #fmTypes{display:contents}
+/* Abonnement */
+.abos{display:grid;gap:8px;margin-bottom:12px}
+.abo{display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:12px 14px;color:var(--txt);font:inherit;cursor:pointer}
+.abo.on{border-color:var(--amber);background:rgba(232,163,61,.1)}
+.abo:disabled{opacity:.45;cursor:not-allowed}
+.abo .n{font-weight:700;font-size:15px}
+.abo .p{font-weight:800;font-size:17px;text-align:right;font-variant-numeric:tabular-nums}
+.abo .p small{font-family:Figtree,sans-serif;font-size:11px;font-weight:500;color:var(--mut)}
+.abo .d{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.4}

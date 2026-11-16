@@ -304,6 +304,7 @@ async function loadCloud() {
       S.cmds = cr2.map(x => ({...x.data, id: x.id, le: x.le, statut: x.statut, recue_le: x.recue_le, total: +x.total_ht}));
       S.releves = rr.map(x => ({le: x.le, v: +x.valeur_ht, o: x.origine}));
     } catch (x) { S.fours = S.fours || []; S.cmds = S.cmds || []; S.releves = S.releves || []; }
+    try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", e).maybeSingle()); } catch (x) { S.abo = S.abo || null; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
   }
@@ -1620,6 +1621,63 @@ async function bilanSheet(off = 0) {
   });
 }
 
+/* ================= Abonnement (Mollie) ================= */
+const ABO_HT = {pilote: 29.99, bar: 49, pro: 79}, ABO_RESTO = 20;
+const ABO_NOMS = {pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro"};
+const ABO_ST = {aucun: ["Pas d'abonnement", ""], en_attente: ["Paiement en attente", "b-warn"], actif: ["Actif", "b-ok"], impaye: ["Paiement refusé", "b-bad"], annule: ["Résilié", "b-warn"]};
+const aboHT = (f, r) => ABO_HT[f] + (r && f !== "pro" ? ABO_RESTO : 0);
+async function aboCall(body) {
+  const {data, error} = await sb.functions.invoke("abonnement", {body: {etab: ETAB.id, ...body}});
+  if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch (e) {} throw new Error(m); }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+async function aboRefresh() { if (!cloud()) return; try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", ETAB.id).maybeSingle()); save(); } catch (e) {} }
+function aboSheet() {
+  if (MODE !== "cloud") return toast("Créez votre compte pour vous abonner");
+  const a = S.abo || {statut: "aucun"}, actif = a.statut === "actif", st = ABO_ST[a.statut] || ABO_ST.aucun;
+  let f = actif ? a.formule : "bar", r = actif ? !!a.resto : restoOn();
+  const card = (k, desc) => `<button type="button" class="abo ${f === k ? "on" : ""}" data-f="${k}" ${actif && k === "pilote" && a.formule !== "pilote" ? "disabled" : ""}>
+      <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eur(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
+  openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement SEPA. Sans engagement, résiliable à tout moment.</div>
+    ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Restauration" : "") : "Abonnement"}</div>
+      <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + " TTC / mois" : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
+    <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
+    <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Restauration incluse. Factures et caisse connectée bientôt.")}</div>
+    <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
+    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Option Restauration</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
+    <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
+    <button class="btn" id="abGo"></button>
+    ${actif || a.statut === "impaye" ? `<div class="gap"></div><button class="btn danger" id="abStop">Résilier l'abonnement</button>` : ""}
+    <p class="tip">Le paiement se fait sur la page sécurisée de Mollie : Dosis Bar ne voit jamais vos coordonnées bancaires.</p>`, () => {
+    const upd = () => { document.querySelectorAll(".abo").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+      $("abCodeF").hidden = !(f === "pilote" && !actif); $("abRestoF").hidden = f === "pro"; r = $("abResto").checked;
+      const ht = aboHT(f, r); $("abHT").textContent = eur(ht) + " HT"; $("abTTC").textContent = eur(Math.round(ht * 120) / 100);
+      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 0,01 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
+      $("abGo").textContent = actif ? (f === a.formule && r === !!a.resto ? "Formule actuelle" : "Changer de formule") : "Continuer vers le paiement";
+      $("abGo").disabled = actif && f === a.formule && r === !!a.resto; };
+    document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });
+    $("abResto").onchange = upd; upd();
+    $("abGo").onclick = async () => { if (!navigator.onLine) return toast("Connexion internet nécessaire");
+      if (!actif && f === "pilote" && !$("abCode").value.trim()) { toast("Entrez votre code pilote"); return $("abCode").focus(); }
+      $("abGo").classList.add("busy");
+      try {
+        if (actif) { await aboCall({action: "changer", formule: f, resto: r}); await aboRefresh(); closeSheet(); toast("Formule modifiée ✓"); }
+        else { const d = await aboCall({action: "souscrire", formule: f, resto: r, code: $("abCode").value}); location.href = d.url; }
+      } catch (e) { toast(frErr(e)); $("abGo").classList.remove("busy"); } };
+    if ($("abStop")) armBtn($("abStop"), "Toucher encore pour résilier", async () => {
+      try { await aboCall({action: "resilier"}); await aboRefresh(); closeSheet(); toast("Abonnement résilié"); } catch (e) { toast(frErr(e)); } });
+  });
+}
+async function aboRetour() {
+  if (!/[?&]abonnement=retour/.test(location.search)) return;
+  history.replaceState(null, "", location.pathname);
+  toast("Merci ! Confirmation du paiement en cours…");
+  for (let i = 0; i < 6; i++) { await new Promise(r => setTimeout(r, 2500)); await aboRefresh();
+    if (S.abo && S.abo.statut === "actif") { toast("Abonnement actif ✓"); render(); return; } }
+  toast("Paiement en cours de validation : il apparaîtra dans quelques minutes");
+}
+
 /* ================= Pertes et offerts ================= */
 function monthLosses() {
   const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0); const by = {};
@@ -1770,9 +1828,10 @@ function settingsSheet() {
     <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
     <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>
-    <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>
+    <button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0);
+    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sAb").onclick = aboSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -1971,7 +2030,7 @@ async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
   S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom; liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir";
-  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home");
+  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home"); if (!isBarman()) aboRetour();
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
 }
