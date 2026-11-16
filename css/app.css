@@ -307,3 +307,19 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
   #printArea td:first-child{width:45%;font-weight:600}
   #printArea .pf{margin-top:12pt;font-size:9pt;color:#555}
 }
+/* Commandes fournisseurs */
+.cline{display:grid;grid-template-columns:1fr 62px 74px 30px;gap:8px;align-items:end;padding:10px 12px;border-bottom:1px solid var(--line)}
+.cline:last-child{border-bottom:0}
+.cline select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--txt);font:inherit;font-size:14px;padding:9px 8px}
+.cline .meta{margin-top:4px}
+.cline .field{margin:0}
+.cline .field label{font-size:11px}
+.cline .field input{padding:9px 8px;font-size:14px}
+.cline .x{margin-bottom:6px}
+.cline .grow{min-width:0}
+.cline .x{height:38px}
+.cline{grid-template-columns:1fr 1fr 38px}
+.cline .grow{grid-column:1/-1}
+.cline .grow .name{white-space:normal}
+.res.bil .s{font-size:12px;color:var(--mut);margin-top:3px}
+#biM{margin-bottom:12px}

@@ -236,9 +236,10 @@ function bottle(level, col) { const id = "bt" + (++gid), l = Math.max(0, Math.mi
   return `<svg width="30" height="38" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="${id}"><path d="${BOTTLE}"/></clipPath></defs><g clip-path="url(#${id})"><rect width="40" height="50" fill="rgba(244,237,228,.05)"/><rect x="0" y="${y}" width="40" height="50" fill="${col}"/></g><path d="${BOTTLE}" fill="none" stroke="rgba(244,237,228,.4)" stroke-width="1.6" stroke-linejoin="round"/></svg>`; }
 
 /* ================= Base en ligne : lecture ================= */
-const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[]});
+const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[],f:r.fournisseur_id||""});
 const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,allergenes:p.al||[],
-  prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString()});
+  prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString(),
+  ...("f" in p ? {fournisseur_id: p.f || null} : {})});
 async function q(promise) { const r = await promise; if (r.error) throw r.error; return r.data; }
 let lastLoad = 0;
 async function loadCloud() {
@@ -268,6 +269,14 @@ async function loadCloud() {
         .map(x => ({id: x.id, le: x.le, type: x.type, n: x.libelle, q: +x.qte, u: x.unite, c: +x.cout_ht})); } catch (x) { S.pertes = S.pertes || []; }
     try { const cr = await q(sb.from("cuisine").select("id,type,data").eq("etab_id", e));
       S.cu = {i: [], r: [], d: []}; cr.forEach(x => (S.cu[x.type] || []).push({...x.data, id: x.id})); } catch (x) { S.cu = S.cu || {i: [], r: [], d: []}; }
+    try { const m3 = new Date(); m3.setMonth(m3.getMonth() - 3); m3.setDate(1);
+      const [fr, cr2, rr] = await Promise.all([q(sb.from("fournisseurs").select("id,data").eq("etab_id", e)),
+        q(sb.from("commandes").select("id,le,statut,recue_le,total_ht,data").eq("etab_id", e).gte("le", m3.toISOString()).order("le", {ascending: false})),
+        q(sb.from("stock_releves").select("le,valeur_ht,origine").eq("etab_id", e).gte("le", m3.toISOString()).order("le"))]);
+      S.fours = fr.map(x => ({...x.data, id: x.id}));
+      S.cmds = cr2.map(x => ({...x.data, id: x.id, le: x.le, statut: x.statut, recue_le: x.recue_le, total: +x.total_ht}));
+      S.releves = rr.map(x => ({le: x.le, v: +x.valeur_ht, o: x.origine}));
+    } catch (x) { S.fours = S.fours || []; S.cmds = S.cmds || []; S.releves = S.releves || []; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
   }
@@ -375,6 +384,7 @@ async function actInventory(counts, loss, details) {
   }
   counts.forEach(([id, st]) => byId(id).st = st);
   S.lastInv = {date: new Date().toISOString(), loss};
+  try { await actReleve("inventaire"); } catch (e) {}
 }
 async function actImport(list, dateISO, ref, aliases) {
   const le = new Date(dateISO + "T23:00:00");
@@ -391,7 +401,7 @@ async function actImport(list, dateISO, ref, aliases) {
   if (S.importRefs.includes(ref)) throw new Error("Ce fichier a déjà été importé");
   res = importEstimate(list);
   list.forEach(x => consume(x.key, x.q));
-  S.history.push({date: le.toISOString(), marg: res.marg, ca: res.ca, qty: res.qty});
+  S.history.push({date: le.toISOString(), marg: res.marg, ca: res.ca, ht: res.ht, qty: res.qty}); if (!cloud()) (S.histAll = S.histAll || []).push(S.history[S.history.length - 1]);
   S.history.sort((a, b) => new Date(a.date) - new Date(b.date)); S.history = S.history.slice(-14);
   S.importRefs.push(ref); S.alias = aliases; save();
   return res;
@@ -425,6 +435,47 @@ async function actResto(r) {
   await actOpts({resto: r});
   S.resto = r;
   if (r && r.on && MODE === "demo" && !(cu().i.length || cu().d.length)) S.cu = seedCuisine();
+}
+/* Fournisseurs, commandes, relevés de stock */
+const stockValue = () => Math.round(S.products.reduce((t, p) => t + p.b * p.st, 0) * 100) / 100;
+async function actSaveFour(id, x) {
+  const L = S.fours = S.fours || [];
+  if (cloud()) {
+    const data = {...x}; delete data.id;
+    if (id) await q(sb.from("fournisseurs").update({data, modifie_le: new Date().toISOString()}).eq("id", id));
+    else id = (await q(sb.from("fournisseurs").insert({etab_id: ETAB.id, data}).select("id").single())).id;
+  } else id = id || "f" + Date.now();
+  const o = L.find(f => f.id === id); if (o) Object.assign(o, x); else L.unshift({...x, id});
+  return id;
+}
+async function actDeleteFour(id) {
+  if (cloud()) await q(sb.from("fournisseurs").delete().eq("id", id));
+  S.fours = (S.fours || []).filter(f => f.id !== id);
+  S.products.forEach(p => { if (p.f === id) p.f = ""; }); cu().i.forEach(i => { if (i.f === id) i.f = ""; });
+}
+async function actLinkProduct(pid, fid) {
+  const p = byId(pid); if (!p) return; p.f = fid || "";
+  if (cloud()) await q(sb.from("produits").update({fournisseur_id: fid || null}).eq("id", pid));
+}
+async function actSaveCmd(id, x) {
+  const L = S.cmds = S.cmds || [], total = Math.round(cmdTotal(x) * 100) / 100;
+  if (cloud()) {
+    const data = {f: x.f, lignes: x.lignes, note: x.note || ""}, row = {statut: x.statut, total_ht: total, recue_le: x.recue_le || null, data, modifie_le: new Date().toISOString()};
+    if (id) await q(sb.from("commandes").update(row).eq("id", id));
+    else { const r = await q(sb.from("commandes").insert({etab_id: ETAB.id, le: x.le || new Date().toISOString(), ...row}).select("id,le").single()); id = r.id; x.le = r.le; }
+  } else id = id || "c" + Date.now() + Math.random().toString(36).slice(2, 5);
+  const o = L.find(c => c.id === id), v = {...x, id, total, le: x.le || new Date().toISOString()};
+  if (o) Object.assign(o, v); else L.unshift(v);
+  return id;
+}
+async function actDeleteCmd(id) {
+  if (cloud()) await q(sb.from("commandes").delete().eq("id", id));
+  S.cmds = (S.cmds || []).filter(c => c.id !== id);
+}
+async function actReleve(origine = "auto") {
+  const v = stockValue(), le = new Date().toISOString();
+  if (cloud()) await q(sb.from("stock_releves").insert({etab_id: ETAB.id, valeur_ht: v, origine}));
+  (S.releves = S.releves || []).push({le, v, o: origine});
 }
 async function actPerte(x) { // {type, n, q, u, c, stock:{id, st}}
   let id = "d" + Date.now();
@@ -669,9 +720,9 @@ $("closeSvc").onclick = () => {
           await q(sb.rpc("cloturer_service", {p_etab: ETAB.id}));
         } catch (e) { b.classList.remove("busy"); return toast(frErr(e)); }
         S.live = {}; lastLoad = 0;
-        if (!barman) S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty, pertes: lossObj(t.loss)});
+        if (!barman) S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, ht: t.ht, qty: t.qty, pertes: lossObj(t.loss)});
       } else {
-        S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, qty: t.qty, pertes: lossObj(t.loss)}); S.history = S.history.slice(-14); S.live = {};
+        S.history.push({date: new Date().toISOString(), marg: t.marg, ca: t.ca, ht: t.ht, qty: t.qty, pertes: lossObj(t.loss)}); (S.histAll = S.histAll || []).push(S.history[S.history.length - 1]); S.history = S.history.slice(-14); S.live = {};
       }
       save(); closeSheet(); go(barman ? "service" : "home"); toast("Service archivé ✓");
     };
@@ -747,13 +798,15 @@ function renderStock() {
     <div class="stepper"><button data-id="${esc(p.id)}" data-d="-1" aria-label="Moins">−</button><span>${f1(p.st)}</span><button data-id="${esc(p.id)}" data-d="1" aria-label="Plus">+</button></div></div>`; }).join("")
     : `<div class="empty">Aucun produit</div>`;
   $("stockList").querySelectorAll(".stepper button").forEach(b => b.onclick = () => { const p = byId(b.dataset.id); actStock(p.id, Math.round((p.st + +b.dataset.d) * 10) / 10); renderStock(); });
+  renderCmds();
   $("order").innerHTML = o.length ? o.map(x => `<div class="row"><div class="grow"><div class="name">${esc(x.p.n)}</div><div class="meta">${eur(x.p.b)} HT la bouteille</div></div><div class="right"><div class="m h">× ${x.q}</div><div class="meta" style="margin:0">${eur(x.q * x.p.b)}</div></div></div>`).join("")
     + `<div class="row"><div class="grow name">Total estimé HT</div><div class="m h" style="color:var(--amber2)">${eur(o.reduce((s, x) => s + x.q * x.p.b, 0))}</div></div>`
     : `<div class="empty">✅ Rien à commander</div>`;
 }
-$("copyOrder").onclick = async () => { const o = orderList(); if (!o.length) return toast("Rien à commander");
-  const txt = `Bonjour,\n\nVoici ma commande${S.bar ? " pour " + S.bar : ""} :\n` + o.map(x => `- ${x.p.n} : ${x.q} bouteille${x.q > 1 ? "s" : ""}`).join("\n") + "\n\nMerci !";
-  try { await navigator.clipboard.writeText(txt); toast("Commande copiée ✓"); } catch (e) { toast("Copie impossible ici"); } };
+$("copyOrder").onclick = prepareOrders;
+$("fourBtn").onclick = foursSheet;
+$("achatBtn").onclick = () => cmdSheet(null, true);
+$("newCmdBtn").onclick = () => { if (!fours().length) { toast("Ajoutez d'abord vos fournisseurs"); return foursSheet(); } cmdSheet(null); };
 $("invBtn").onclick = () => openInventory(false);
 $("perteBtn").onclick = () => perteSheet();
 $("invScanBtn").onclick = () => openInventory(true);
@@ -971,11 +1024,12 @@ function productSheet(id, preset) {
       <div class="field"><label for="fS">Prix de vente TTC (€)</label><input id="fS" inputmode="decimal" value="${p.s === "" ? "" : f1x(p.s)}"></div>
       <div class="field"><label for="fSt">Stock (bouteilles)</label><input id="fSt" inputmode="decimal" value="${f1x(p.st)}"></div>
       <div class="field"><label for="fM">Stock minimum</label><input id="fM" inputmode="decimal" value="${f1x(p.m)}"></div>
+      ${fours().length ? `<div class="field"><label for="fF">Fournisseur</label><select id="fF">${opts([["", "— Aucun —"], ...fours().map(f => [f.id, f.n])], p.f || "")}</select></div>` : ""}
     </div>
     <div class="field"><label>Allergènes (sulfites pour le vin, gluten pour la bière…)</label>${algChips(p.al || [])}</div>
     <div class="card" style="background:var(--card2)"><div class="res" id="fRes"></div></div>
     <button class="btn" id="fSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="fDel">Supprimer ce produit</button>` : ""}`, () => {
-    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead()});
+    const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead(),...($("fF") ? {f: $("fF").value} : {})});
     algArm();
     const scanFill = () => openScanner("Visez le code-barres de la bouteille", async code => {
       closeScanner(); $("fCode").value = code;
@@ -1207,6 +1261,275 @@ function zonesLine(base, c) {
     return `${l} <b>${eur(pz)}</b> <span style="color:${tone(r)}">(${pct(r)})</span>`; }).join(" · ")}</div></div>`;
 }
 
+/* ================= Fournisseurs et commandes ================= */
+const fours = () => S.fours || (S.fours = []);
+const fourById = id => fours().find(f => f.id === id);
+const cmds = () => S.cmds || (S.cmds = []);
+const CMD_ST = {brouillon: ["À envoyer", "b-warn"], envoyee: ["Envoyée", "b-ok"], recue: ["Reçue", "b-ok"]};
+function cmdTotal(c) { return (c.lignes || []).reduce((t, l) => t + num(c.statut === "recue" && l.qr != null ? l.qr : l.q) * num(c.statut === "recue" && l.pr != null ? l.pr : l.prix), 0); }
+function lineSource(t, id) { // article commandable : produit du bar (bouteille) ou ingrédient (conditionnement acheté)
+  if (t === "p") { const p = byId(id); return p && {n: p.n, u: "bouteille", prix: p.b, f: p.f}; }
+  const i = cuFind("i", id); if (!i) return null; const b = buyInfo(i);
+  return {n: i.n, u: `${f1(b.qa)} ${b.ua === "pce" ? (b.qa > 1 ? "pièces" : "pièce") : BUY_U[b.ua][2]}`, prix: b.pa, f: i.f};
+}
+const unitPlural = (u, q) => q > 1 && u === "bouteille" ? "bouteilles" : u;
+function cmdText(c) {
+  const f = fourById(c.f) || {n: ""};
+  return `Bonjour${f.contact ? " " + f.contact : ""},\n\nVoici notre commande${S.bar ? " pour " + S.bar : ""} :\n`
+    + (c.lignes || []).map(l => `- ${l.n} : ${f1(num(l.q))} ${l.u === "bouteille" ? unitPlural(l.u, num(l.q)) : "× " + l.u}`).join("\n")
+    + (c.note ? `\n\n${c.note}` : "") + `\n\nMerci de nous confirmer la livraison.\nBien cordialement,\n${S.bar || ""}`;
+}
+function renderCmds() {
+  const el = $("cmdList"); if (!el) return;
+  const L = cmds().filter(c => c.statut !== "recue").concat(cmds().filter(c => c.statut === "recue").slice(0, 3));
+  el.innerHTML = L.length ? L.map(c => { const f = fourById(c.f), st = CMD_ST[c.statut];
+    return `<div class="row tap" data-cmd="${esc(c.id)}"><div class="emoji">${c.statut === "recue" ? "📦" : "🧾"}</div><div class="grow"><div class="name">${esc(f ? f.n : "Sans fournisseur")}</div>
+      <div class="meta">${(c.lignes || []).length} article${(c.lignes || []).length > 1 ? "s" : ""} · ${new Date(c.statut === "recue" && c.recue_le ? c.recue_le : c.le).toLocaleDateString("fr-FR", {day: "numeric", month: "short"})}</div></div>
+      <div class="right"><div class="m h">${eur(c.total != null ? c.total : cmdTotal(c))}</div><span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("")
+    : `<div class="empty">Aucune commande en cours.</div>`;
+  el.querySelectorAll("[data-cmd]").forEach(r => r.onclick = () => cmdSheet(r.dataset.cmd));
+  $("fourBtn").textContent = `🚚 Mes fournisseurs${fours().length ? " (" + fours().length + ")" : ""}`;
+}
+async function prepareOrders() {
+  const o = orderList(); if (!o.length) return toast("Rien à commander : tout le stock est au-dessus du minimum");
+  if (!fours().length) { toast("Ajoutez d'abord vos fournisseurs"); return foursSheet(); }
+  const groups = {}; o.forEach(x => (groups[x.p.f || ""] = groups[x.p.f || ""] || []).push(x));
+  let made = 0;
+  for (const fid of Object.keys(groups)) {
+    const ex = cmds().find(c => c.statut === "brouillon" && (c.f || "") === fid), lignes = ex ? ex.lignes.slice() : [];
+    groups[fid].forEach(({p, q}) => { const l = lignes.find(l => l.t === "p" && l.id === p.id); if (l) l.q = Math.max(num(l.q), q); else lignes.push({t: "p", id: p.id, n: p.n, q, u: "bouteille", prix: p.b}); });
+    if (await act(() => actSaveCmd(ex ? ex.id : null, {...(ex || {}), f: fid, statut: "brouillon", lignes}), null)) made++;
+  }
+  renderStock();
+  toast(made > 1 ? `${made} commandes préparées ✓` : "Commande préparée ✓");
+  if (groups[""]) toast("Produit sans fournisseur : à choisir dans sa commande");
+  const first = cmds().find(c => c.statut === "brouillon" && c.f) || cmds().find(c => c.statut === "brouillon"); if (first) cmdSheet(first.id);
+}
+function cmdSheet(id, achat = false) {
+  const c0 = id ? cmds().find(c => c.id === id) : null;
+  const c = c0 ? JSON.parse(JSON.stringify(c0)) : {f: fours()[0] ? fours()[0].id : "", statut: achat ? "recue" : "brouillon", lignes: [], note: ""};
+  const ro = c.statut === "recue" && !!c0, isAchat = !c0 && achat;
+  const srcOpts = [...S.products.map(p => ["p:" + p.id, p.n]), ...cu().i.map(i => ["i:" + i.id, "🧺 " + i.n])];
+  const title = ro ? "Livraison reçue" : isAchat ? "Saisir un achat" : c.statut === "envoyee" ? "Commande envoyée" : id ? "Commande à envoyer" : "Nouvelle commande";
+  openSheet(`<h2 class="h">${title}</h2><div class="sub">${ro ? "Reçue le " + new Date(c.recue_le || c.le).toLocaleDateString("fr-FR") : isAchat ? "Une facture ou un achat fait sans commande (Metro, marché…). Le stock et les prix d'achat sont mis à jour." : "Prix d'achat hors taxes"}</div>
+    <div class="field"><label for="cF">Fournisseur</label><select id="cF" ${ro ? "disabled" : ""}>${opts([["", "— Choisir —"], ...fours().map(f => [f.id, f.n])], c.f)}</select></div>
+    <div id="cL"></div>${ro ? "" : `<button class="btn ghost" id="cAdd" style="margin-bottom:12px">+ Ajouter un article</button>`}
+    ${ro ? "" : `<div class="field"><label for="cN">Message pour le fournisseur (facultatif)</label><input id="cN" value="${esc(c.note || "")}" placeholder="Ex : livraison avant jeudi 10 h" maxlength="200"></div>`}
+    <div class="card" style="background:var(--card2)"><div class="res"><div style="grid-column:1/-1"><div class="l">Total HT</div><div class="v h" id="cTot"></div></div></div></div>
+    <div id="cAct"></div>`, () => {
+    const draw = () => {
+      $("cL").innerHTML = c.lignes.length ? `<div class="card list">${c.lignes.map((l, k) => ro
+        ? `<div class="row"><div class="grow"><div class="name">${esc(l.n)}</div><div class="meta">${f1(num(l.qr ?? l.q))} × ${esc(l.u)} à ${eur(num(l.pr ?? l.prix))}</div></div><div class="right m h">${eur(num(l.qr ?? l.q) * num(l.pr ?? l.prix))}</div></div>`
+        : `<div class="cline"><div class="grow"><select data-k="${k}" data-f="src" aria-label="Article">${opts(srcOpts, l.t + ":" + l.id)}</select><div class="meta">${esc(l.u)}</div></div>
+          <div class="field"><label>Qté</label><input data-k="${k}" data-f="q" inputmode="decimal" value="${f1x(l.q)}"></div>
+          <div class="field"><label>Prix HT</label><input data-k="${k}" data-f="prix" inputmode="decimal" value="${f1x(l.prix)}"></div>
+          <button class="x" data-del="${k}" aria-label="Retirer">✕</button></div>`).join("")}</div>`
+        : `<div class="empty">Aucun article. Touchez « Ajouter un article ».</div>`;
+      $("cL").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const l = c.lignes[+e.dataset.k];
+        if (e.dataset.f === "src") { const [t, ...r] = e.value.split(":"), sx = lineSource(t, r.join(":")); Object.assign(l, {t, id: r.join(":"), n: sx.n, u: sx.u, prix: sx.prix}); draw(); }
+        else l[e.dataset.f] = num(e.value); tot(); });
+      $("cL").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { c.lignes.splice(+b.dataset.del, 1); draw(); tot(); });
+      tot();
+    };
+    const tot = () => { $("cTot").textContent = eur(cmdTotal(c)); };
+    draw();
+    if (!ro) {
+      $("cF").onchange = () => c.f = $("cF").value;
+      $("cAdd").onclick = () => { if (!srcOpts.length) return toast("Ajoutez d'abord des produits");
+        const mine = srcOpts.find(([v]) => { const [t, ...r] = v.split(":"), sx = lineSource(t, r.join(":")); return sx && sx.f === c.f && !c.lignes.some(l => l.t + ":" + l.id === v); }) || srcOpts.find(([v]) => !c.lignes.some(l => l.t + ":" + l.id === v)) || srcOpts[0];
+        const [t, ...r] = mine[0].split(":"), sx = lineSource(t, r.join(":")); c.lignes.push({t, id: r.join(":"), n: sx.n, q: 1, u: sx.u, prix: sx.prix}); draw(); };
+    }
+    const readC = () => { if (!ro) { c.f = $("cF").value; c.note = $("cN").value.trim(); } c.lignes = c.lignes.filter(l => num(l.q) > 0); return c; };
+    const f = () => fourById($("cF").value);
+    let acts = "";
+    if (isAchat) acts = `<button class="btn" id="cRecv">Enregistrer l'achat</button>`;
+    else if (c.statut === "brouillon") acts = `<button class="btn" id="cMail">✉️ Envoyer par email</button><div class="gap"></div><button class="btn ghost" id="cWa">💬 Envoyer par WhatsApp</button><div class="gap"></div>
+      <button class="btn ghost" id="cCopy">Copier le texte</button><div class="gap"></div><button class="btn ghost" id="cSave">Enregistrer sans envoyer</button>${id ? `<div class="gap"></div><button class="btn danger" id="cDel">Supprimer la commande</button>` : ""}`;
+    else if (c.statut === "envoyee") acts = `<button class="btn" id="cRecv">📦 Réceptionner la livraison</button><div class="gap"></div><button class="btn ghost" id="cCopy">Copier le texte</button><div class="gap"></div><button class="btn danger" id="cDel">Annuler la commande</button>`;
+    $("cAct").innerHTML = acts;
+    const saveAs = async (statut, msg) => { const x = readC(); if (!x.lignes.length) { toast("Ajoutez au moins un article"); return null; }
+      return await act(() => actSaveCmd(id, {...x, statut}), msg); };
+    const send = async how => { const x = readC(), fr = f(); if (!x.lignes.length) return toast("Ajoutez au moins un article");
+      if (!fr) { toast("Choisissez d'abord le fournisseur"); return $("cF").focus(); }
+      const txt = cmdText(x);
+      if (how === "mail") { if (!fr || !fr.email) return toast("Ajoutez l'email du fournisseur dans Mes fournisseurs");
+        location.href = `mailto:${encodeURIComponent(fr.email)}?subject=${encodeURIComponent("Commande " + (S.bar || ""))}&body=${encodeURIComponent(txt)}`; }
+      else { const tel = ((fr && fr.tel) || "").replace(/[^0-9+]/g, "").replace(/^0/, "33").replace(/^\+/, "");
+        if (!tel) return toast("Ajoutez le téléphone du fournisseur dans Mes fournisseurs");
+        window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`, "_blank"); }
+      if (await saveAs("envoyee", "Commande notée comme envoyée ✓")) { closeSheet(); renderStock(); } };
+    if ($("cMail")) $("cMail").onclick = () => send("mail");
+    if ($("cWa")) $("cWa").onclick = () => send("wa");
+    if ($("cCopy")) $("cCopy").onclick = async () => { try { await navigator.clipboard.writeText(cmdText(readC())); toast("Texte copié ✓"); } catch (e) { toast("Copie impossible ici"); } };
+    if ($("cSave")) $("cSave").onclick = async () => { if (await saveAs("brouillon", "Commande enregistrée ✓")) { closeSheet(); renderStock(); } };
+    if ($("cDel")) armBtn($("cDel"), "Toucher encore pour confirmer", async () => { if (await act(() => actDeleteCmd(id), "Commande supprimée")) { closeSheet(); renderStock(); } });
+    if ($("cRecv")) $("cRecv").onclick = () => { const x = readC(); if (!x.lignes.length) return toast("Ajoutez au moins un article"); if (!x.f && !isAchat) return toast("Choisissez le fournisseur"); receptionSheet(id, x); };
+  });
+}
+function receptionSheet(id, c) {
+  const L = c.lignes.map(l => ({...l, qr: l.qr ?? l.q, pr: l.pr ?? l.prix}));
+  openSheet(`<h2 class="h">Réception</h2><div class="sub">Vérifiez ce qui est arrivé et le prix de la facture. Le stock et vos prix d'achat seront mis à jour.</div>
+    <div class="card list">${L.map((l, k) => `<div class="cline"><div class="grow"><div class="name" style="font-size:14px">${esc(l.n)}</div><div class="meta">commandé ${f1(num(l.q))} × ${esc(l.u)} à ${eur(num(l.prix))}</div></div>
+      <div class="field"><label>Reçu</label><input data-k="${k}" data-f="qr" inputmode="decimal" value="${f1x(l.qr)}"></div>
+      <div class="field"><label>Prix HT</label><input data-k="${k}" data-f="pr" inputmode="decimal" value="${f1x(l.pr)}"></div></div>`).join("")}</div>
+    <div class="card" style="background:var(--card2)"><div class="res" id="rcRes"></div></div>
+    <button class="btn" id="rcOk">Valider la réception</button>`, () => {
+    const upd = () => { const tot = L.reduce((t, l) => t + num(l.qr) * num(l.pr), 0), ch = L.filter(l => Math.abs(num(l.pr) - num(l.prix)) > .004).length, miss = L.filter(l => num(l.qr) < num(l.q)).length;
+      $("rcRes").innerHTML = `<div><div class="l">Total HT reçu</div><div class="v h">${eur(tot)}</div></div><div><div class="l">À signaler</div><div style="font-size:13px;margin-top:3px">${[ch ? `${ch} prix changé${ch > 1 ? "s" : ""}` : "", miss ? `${miss} article${miss > 1 ? "s" : ""} manquant${miss > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ") || "Rien"}</div></div>`; };
+    $("sBody").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { L[+e.dataset.k][e.dataset.f] = num(e.value); upd(); }); upd();
+    $("rcOk").onclick = async () => { $("rcOk").classList.add("busy"); const alerts = [];
+      const ok = await act(async () => {
+        for (const l of L) {
+          if (l.t === "p") { const p = byId(l.id); if (!p) continue;
+            const oldR = prodCalc(p).rate, nb = num(l.pr) > 0 ? num(l.pr) : p.b, changed = Math.abs(nb - p.b) > .004;
+            await actSaveProduct(p.id, {...p, b: nb, st: Math.round((p.st + num(l.qr)) * 1000) / 1000});
+            if (changed) alerts.push({n: p.n, from: num(l.prix), to: nb, txt: `marge ${pct(oldR)} → ${pct(prodCalc(byId(p.id)).rate)}`, bad: prodCalc(byId(p.id)).rate < tgtP(p)});
+          } else { const i = cuFind("i", l.id); if (!i) continue; const b = buyInfo(i);
+            if (num(l.pr) > 0 && Math.abs(num(l.pr) - b.pa) > .004) {
+              const before = cu().d.map(d => [d, platCalc(d).rate]);
+              await actSaveCu("i", i.id, {...i, qa: b.qa, ua: b.ua, pa: num(l.pr), u: b.u, prix: buyInfo({...i, qa: b.qa, ua: b.ua, pa: num(l.pr)}).prix});
+              const hit = before.map(([d, r]) => [d, r, platCalc(d).rate]).filter(([, r0, r1]) => Math.abs(r1 - r0) > .05);
+              alerts.push({n: i.n, from: b.pa, to: num(l.pr), txt: hit.length ? hit.slice(0, 3).map(([d, r0, r1]) => `${d.n} ${pct(r0)} → ${pct(r1)}`).join(" · ") : "aucun plat touché", bad: hit.some(([, , r1]) => r1 < cuTarget())}); } }
+        }
+        await actSaveCmd(id, {...c, lignes: L, statut: "recue", recue_le: new Date().toISOString()});
+      }, null);
+      if (!ok) return $("rcOk").classList.remove("busy");
+      renderStock();
+      if (!alerts.length) { closeSheet(); return toast("Livraison enregistrée ✓"); }
+      openSheet(`<h2 class="h">Livraison enregistrée</h2><div class="sub">Des prix d'achat ont changé. Vos marges sont recalculées.</div>
+        <div class="card list">${alerts.map(a => `<div class="row"><div class="emoji">${a.to > a.from ? "📈" : "📉"}</div><div class="grow"><div class="name">${esc(a.n)}</div><div class="meta" style="white-space:normal">${eur(a.from)} → <b>${eur(a.to)}</b> HT (${a.to > a.from ? "+" : ""}${pct((a.to - a.from) / (a.from || 1) * 100)}) · ${esc(a.txt)}</div></div>${a.bad ? `<span class="badge b-bad">Sous l'objectif</span>` : ""}</div>`).join("")}</div>
+        ${alerts.some(a => a.bad) ? `<p class="tip">Pensez à revoir vos prix de vente : l'accueil vous propose les hausses à faire.</p>` : ""}<button class="btn" id="rcClose">Compris</button>`, () => $("rcClose").onclick = closeSheet);
+    };
+  });
+}
+function foursSheet() {
+  openSheet(`<h2 class="h">Mes fournisseurs</h2><div class="sub">Grossistes, brasseurs, cavistes, Metro… Rattachez-leur vos produits pour préparer les commandes en un geste.</div>
+    <button class="cuadd" id="fAdd"><span>+</span>Ajouter un fournisseur</button>
+    <div class="card list">${fours().map(f => { const n = S.products.filter(p => p.f === f.id).length + cu().i.filter(i => i.f === f.id).length;
+      return `<div class="row tap" data-f="${esc(f.id)}"><div class="emoji">🚚</div><div class="grow"><div class="name">${esc(f.n)}</div><div class="meta">${n} article${n > 1 ? "s" : ""}${f.jours ? " · " + esc(f.jours) : ""}</div></div><div class="right meta">${f.email ? "✉️" : ""}${f.tel ? " 💬" : ""}</div></div>`; }).join("") || `<div class="empty">Aucun fournisseur pour l'instant.</div>`}</div>`, () => {
+    $("fAdd").onclick = () => fourSheet(null);
+    $("sBody").querySelectorAll("[data-f]").forEach(r => r.onclick = () => fourSheet(r.dataset.f));
+  });
+}
+function fourSheet(id) {
+  const f = id ? fourById(id) : {n: "", contact: "", email: "", tel: "", jours: "", note: ""};
+  const sel = new Set([...S.products.filter(p => id && p.f === id).map(p => "p:" + p.id), ...cu().i.filter(i => id && i.f === id).map(i => "i:" + i.id)]);
+  const all = [...S.products.map(p => ["p:" + p.id, p.n, p.f && p.f !== id ? fourById(p.f) : null]), ...cu().i.map(i => ["i:" + i.id, "🧺 " + i.n, i.f && i.f !== id ? fourById(i.f) : null])];
+  openSheet(`<h2 class="h">${id ? esc(f.n) : "Nouveau fournisseur"}</h2><div class="sub">Ses coordonnées servent à lui envoyer les commandes</div>
+    <div class="field"><label for="foN">Nom</label><input id="foN" value="${esc(f.n)}" placeholder="Ex : Boissons de Paris" maxlength="80"></div>
+    <div class="field"><label for="foC">Interlocuteur (facultatif)</label><input id="foC" value="${esc(f.contact || "")}" placeholder="Ex : Karim" maxlength="60"></div>
+    <div class="two"><div class="field"><label for="foE">Email</label><input id="foE" type="email" inputmode="email" value="${esc(f.email || "")}" placeholder="commandes@…"></div>
+    <div class="field"><label for="foT">Téléphone (WhatsApp)</label><input id="foT" type="tel" inputmode="tel" value="${esc(f.tel || "")}" placeholder="06…"></div></div>
+    <div class="field"><label for="foJ">Jours de commande ou de livraison</label><input id="foJ" value="${esc(f.jours || "")}" placeholder="Ex : commande le lundi, livré le mercredi" maxlength="80"></div>
+    <div class="field"><label>Ce que vous lui achetez</label><div class="algs" id="foP">${all.map(([v, n, other]) => `<button type="button" class="chip ${sel.has(v) ? "on" : ""}" data-v="${esc(v)}" title="${other ? "Actuellement chez " + esc(other.n) : ""}">${esc(n)}</button>`).join("") || `<span class="tip">Ajoutez d'abord des produits.</span>`}</div></div>
+    <button class="btn" id="foSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="foDel">Supprimer ce fournisseur</button>` : ""}`, () => {
+    $("foP").querySelectorAll("[data-v]").forEach(b => b.onclick = () => { b.classList.toggle("on"); sel[b.classList.contains("on") ? "add" : "delete"](b.dataset.v); });
+    $("foSave").onclick = async () => { const x = {n: $("foN").value.trim(), contact: $("foC").value.trim(), email: $("foE").value.trim(), tel: $("foT").value.trim(), jours: $("foJ").value.trim()};
+      if (!x.n) return toast("Donnez un nom au fournisseur");
+      $("foSave").classList.add("busy");
+      const ok = await act(async () => { const fid = await actSaveFour(id, x);
+        for (const p of S.products) { const want = sel.has("p:" + p.id); if (want && p.f !== fid) await actLinkProduct(p.id, fid); else if (!want && p.f === fid) await actLinkProduct(p.id, ""); }
+        for (const i of cu().i) { const want = sel.has("i:" + i.id); if (want !== (i.f === fid)) await actSaveCu("i", i.id, {...i, f: want ? fid : ""}); }
+      }, id ? "Fournisseur mis à jour ✓" : "Fournisseur ajouté ✓");
+      if (ok) foursSheet(); else $("foSave").classList.remove("busy"); };
+    if (id) armBtn($("foDel"), "Toucher encore pour supprimer", async () => { if (await act(() => actDeleteFour(id), "Fournisseur supprimé")) foursSheet(); });
+  });
+}
+
+/* ================= Bilan du mois (comptable) ================= */
+function monthBounds(off) { const a = new Date(); a.setDate(1); a.setHours(0, 0, 0, 0); a.setMonth(a.getMonth() - off); const b = new Date(a); b.setMonth(b.getMonth() + 1); return [a, b]; }
+const monthName = d => d.toLocaleDateString("fr-FR", {month: "long", year: "numeric"});
+async function bilanData(off) {
+  const [a, b] = monthBounds(off), inM = d => { d = new Date(d); return d >= a && d < b; };
+  let sv, pertesHors;
+  if (cloud()) {
+    const [r1, r2] = await Promise.all([
+      q(sb.from("services").select("ouvert_le,ca_ttc,ca_ht,marge_ht,verres,pertes").eq("etab_id", ETAB.id).not("clos_le", "is", null).gte("ouvert_le", a.toISOString()).lt("ouvert_le", b.toISOString())),
+      q(sb.from("pertes").select("type,cout_ht").eq("etab_id", ETAB.id).gte("le", a.toISOString()).lt("le", b.toISOString()))]);
+    sv = r1.map(x => ({ca: +x.ca_ttc, ht: +x.ca_ht, marg: +x.marge_ht, qty: x.verres, pertes: x.pertes}));
+    pertesHors = r2.map(x => ({type: x.type, c: +x.cout_ht}));
+  } else {
+    const seen = new Set(), all = [...(S.histAll || []), ...(S.history || [])].filter(h => { const k = h.date; if (seen.has(k)) return false; seen.add(k); return true; });
+    sv = all.filter(h => inM(h.date)).map(h => ({ca: h.ca, ht: h.ht != null ? h.ht : h.ca / 1.2, marg: h.marg, qty: h.qty, pertes: h.pertes}));
+    pertesHors = (S.pertes || []).filter(x => inM(x.le)).map(x => ({type: x.type, c: x.c}));
+  }
+  const sum = (L, f) => L.reduce((t, x) => t + (+f(x) || 0), 0);
+  const ca = sum(sv, x => x.ca), ht = sum(sv, x => x.ht), marg = sum(sv, x => x.marg), qty = sum(sv, x => x.qty);
+  const lossSvc = {}; sv.forEach(x => { for (const z in x.pertes || {}) { const e = lossSvc[z] = lossSvc[z] || {n: 0, c: 0}; e.n += x.pertes[z].n; e.c += x.pertes[z].c; } });
+  const achatsL = cmds().filter(c => c.statut === "recue" && inM(c.recue_le || c.le)), achats = sum(achatsL, c => c.total);
+  const byF = {}; achatsL.forEach(c => { const n = (fourById(c.f) || {n: "Sans fournisseur"}).n; byF[n] = (byF[n] || 0) + c.total; });
+  const R = (S.releves || []).slice().sort((x, y) => new Date(x.le) - new Date(y.le));
+  const before = R.filter(r => new Date(r.le) < a).pop(), firstIn = R.find(r => inM(r.le)), afterEnd = R.find(r => new Date(r.le) >= b);
+  const stockDeb = before ? before.v : firstIn ? firstIn.v : null, stockFin = off === 0 ? stockValue() : afterEnd ? afterEnd.v : null;
+  const debLate = !before && firstIn && (new Date(firstIn.le) - a) > 2 * 864e5;
+  const coutTheo = ht - marg, coutReel = stockDeb != null && stockFin != null && !debLate ? stockDeb + achats - stockFin : null;
+  const days = Math.round((b - a) / 864e5), elapsed = off === 0 ? Math.min(days, Math.ceil((Date.now() - a) / 864e5)) : days;
+  const hors = sum(pertesHors, x => x.c), ch = chTotal() * elapsed / days;
+  return {a, b, nServ: sv.length, ca, ht, tva: ca - ht, marg, qty, lossSvc, achats, byF, nAchats: achatsL.length, stockDeb, stockFin,
+    stockDebEst: !before && !!firstIn, debLate, firstInDate: firstIn ? firstIn.le : null, elapsed, days, coutTheo, coutReel, ecart: coutReel != null ? coutReel - coutTheo : null, hors, ch, resultat: marg - hors - ch};
+}
+function bilanRows(d) {
+  const r = [["Mois", monthName(d.a)], ["Établissement", S.bar || ""], ["", ""],
+    ["VENTES", ""], ["Services clôturés", d.nServ], ["Verres et plats vendus", d.qty], ["Chiffre d'affaires TTC", d.ca], ["Chiffre d'affaires HT", d.ht], ["TVA collectée (estimation)", d.tva], ["Marge brute HT", d.marg],
+    ["", ""], ["ACHATS", ""], ["Achats HT (livraisons et factures saisies)", d.achats], ...Object.entries(d.byF).map(([n, v]) => ["  " + n, v]),
+    ["", ""], ["STOCK", ""], ["Stock au début du mois HT", d.stockDeb ?? "non relevé"], ["Stock à la fin du mois HT", d.stockFin ?? "non relevé"],
+    ["", ""], ["COÛT MATIÈRE", ""], ["Coût matière prévu (d'après les ventes)", d.coutTheo], ["Coût matière réel (stock début + achats − stock fin)", d.coutReel ?? "incomplet"],
+    ["Écart (pertes non expliquées)", d.ecart ?? "incomplet"], ["Coût matière en % du CA HT", d.ht > 0 ? Math.round(d.coutTheo / d.ht * 1000) / 10 + " %" : ""],
+    ["", ""], ["PERTES ET OFFERTS", ""], ...Object.entries(d.lossSvc).map(([z, x]) => [(LOSS[z] || [z])[0] + " (" + x.n + ")", x.c]), ["Pertes notées hors service", d.hors],
+    ["", ""], ["RÉSULTAT ESTIMÉ", ""], [d.elapsed < d.days ? `Charges fixes (${d.elapsed} jours sur ${d.days})` : "Charges fixes du mois", d.ch], ["Résultat estimé (marge − pertes − charges)", d.resultat]];
+  return r;
+}
+function bilanCsv(d) {
+  const cell = v => typeof v === "number" ? (Math.round(v * 100) / 100).toString().replace(".", ",") : `"${String(v).replace(/"/g, '""')}"`;
+  return "\ufeff" + bilanRows(d).map(([k, v]) => cell(k) + ";" + (v === "" ? "" : cell(v))).join("\r\n");
+}
+async function bilanSheet(off = 0) {
+  openSheet(`<h2 class="h">Bilan du mois</h2><div class="sub">Pour suivre votre mois et l'envoyer à votre comptable</div>
+    <div class="chips" id="biM">${[0, 1, 2].map(o => `<button class="chip ${o === off ? "on" : ""}" data-o="${o}">${monthName(monthBounds(o)[0])}</button>`).join("")}</div>
+    <div id="biBody"><div class="empty">Calcul en cours…</div></div>`, async () => {
+    $("biM").querySelectorAll("[data-o]").forEach(b => b.onclick = () => bilanSheet(+b.dataset.o));
+    let d; try { d = await bilanData(off); } catch (e) { $("biBody").innerHTML = `<div class="empty">${esc(frErr(e))}</div>`; return; }
+    const v = x => x == null ? "—" : eur(x), lossT = Object.values(d.lossSvc).reduce((t, x) => t + x.c, 0) + d.hors;
+    $("biBody").innerHTML = `
+      <div class="card"><div class="res bil">
+        <div><div class="l">Chiffre d'affaires HT</div><div class="v h">${eur(d.ht, 0)}</div><div class="s">${eur(d.ca, 0)} TTC · ${d.nServ} service${d.nServ > 1 ? "s" : ""}</div></div>
+        <div><div class="l">Marge brute HT</div><div class="v h" style="color:var(--amber2)">${eur(d.marg, 0)}</div><div class="s">${pct(d.ht ? d.marg / d.ht * 100 : NaN)} du CA</div></div>
+        <div><div class="l">Achats HT</div><div class="v h">${eur(d.achats, 0)}</div><div class="s">${d.nAchats} livraison${d.nAchats > 1 ? "s" : ""} ou facture${d.nAchats > 1 ? "s" : ""}</div></div>
+        <div><div class="l">Pertes et offerts</div><div class="v h" style="color:${lossT ? "var(--bad)" : "inherit"}">${eur(lossT, 0)}</div><div class="s">au prix d'achat</div></div>
+      </div></div>
+      <div class="lbl"><span>Coût matière</span></div>
+      <div class="card list">
+        <div class="row"><div class="grow"><div class="name">Prévu, d'après les ventes</div><div class="meta">${pct(d.ht ? d.coutTheo / d.ht * 100 : NaN)} du CA HT</div></div><div class="right m h">${v(d.coutTheo)}</div></div>
+        <div class="row"><div class="grow"><div class="name">Réel</div><div class="meta" style="white-space:normal">Stock début ${v(d.stockDeb)}${d.stockDebEst ? " (relevé en cours de mois)" : ""} + achats ${v(d.achats)} − stock fin ${v(d.stockFin)}</div></div><div class="right m h">${v(d.coutReel)}</div></div>
+        <div class="row"><div class="grow"><div class="name">Écart</div><div class="meta" style="white-space:normal">${d.ecart == null ? (d.debLate ? `Le premier relevé de stock date du ${new Date(d.firstInDate).toLocaleDateString("fr-FR")} : le calcul complet sera possible dès le mois prochain.` : "Il manque un relevé de stock pour ce mois : faites un inventaire en fin de mois.") : d.ecart > 0 ? "Marchandise sortie sans être vendue : surdosage, offerts non notés, casse, vol…" : "Pas de fuite visible."}</div></div>
+          <div class="right m h" style="color:${d.ecart == null ? "var(--mut)" : d.ecart > 0 ? "var(--bad)" : "var(--ok)"}">${d.ecart == null ? "—" : eur(d.ecart)}</div></div>
+      </div>
+      <div class="lbl"><span>Résultat estimé</span></div>
+      <div class="card list">
+        <div class="row"><div class="grow name">Marge brute</div><div class="right m h">${eur(d.marg)}</div></div>
+        <div class="row"><div class="grow name">− Pertes notées hors service</div><div class="right m h">${eur(d.hors)}</div></div>
+        <div class="row"><div class="grow"><div class="name">− Charges fixes</div>${!chTotal() ? `<div class="meta">Renseignez-les dans Réglages › Mes charges fixes</div>` : d.elapsed < d.days ? `<div class="meta">${d.elapsed} jours sur ${d.days} (mois en cours)</div>` : ""}</div><div class="right m h">${eur(d.ch)}</div></div>
+        <div class="row"><div class="grow name">Résultat estimé</div><div class="right m h" style="color:${d.resultat >= 0 ? "var(--ok)" : "var(--bad)"}">${eur(d.resultat)}</div></div>
+      </div>
+      <p class="tip">Estimation de gestion, pas une comptabilité officielle. Votre comptable s'appuie sur les factures et le relevé de caisse.</p>
+      <div class="field"><label for="biE">Email de votre comptable</label><input id="biE" type="email" inputmode="email" value="${esc((S.opts && S.opts.compta) || "")}" placeholder="cabinet@…"></div>
+      <button class="btn" id="biSend">📤 Envoyer au comptable</button><div class="gap"></div>
+      <div class="two"><button class="btn ghost" id="biCsv">Fichier Excel</button><button class="btn ghost" id="biPdf">PDF / Imprimer</button></div>`;
+    const fname = `Bilan ${S.bar || "Dosis Bar"} ${monthName(d.a)}.csv`.replace(/[\\/:*?"<>|]/g, "-");
+    const file = () => new File([bilanCsv(d)], fname, {type: "text/csv"});
+    const saveMail = async () => { const e = $("biE").value.trim(); if (e !== ((S.opts && S.opts.compta) || "")) { try { await actOpts({compta: e}); save(); } catch (x) {} } return e; };
+    $("biCsv").onclick = () => { const u = URL.createObjectURL(file()), a = document.createElement("a"); a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); toast("Fichier téléchargé ✓"); };
+    $("biPdf").onclick = () => { $("printArea").innerHTML = `<h1>Bilan de ${esc(monthName(d.a))}</h1><p>${esc(S.bar || "")}</p><table><tbody>${bilanRows(d).slice(3).map(([k, x]) => k === "" ? `<tr><td colspan="2" style="border:0;height:6pt"></td></tr>`
+        : x === "" ? `<tr><td colspan="2" style="background:#eee;font-weight:700">${esc(k)}</td></tr>` : `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof x === "number" ? eur(x) : esc(x)}</td></tr>`).join("")}</tbody></table>
+        <p class="pf">Estimation de gestion établie par Dosis Bar le ${new Date().toLocaleDateString("fr-FR")}. Ne remplace pas les pièces comptables.</p>`; window.print(); };
+    $("biSend").onclick = async () => { const e = await saveMail(), f = file(), title = `Bilan ${monthName(d.a)} – ${S.bar || ""}`;
+      const body = `Bonjour,\n\nVoici le bilan de gestion de ${monthName(d.a)}${S.bar ? " pour " + S.bar : ""} :\n- Chiffre d'affaires HT : ${eur(d.ht)} (TTC ${eur(d.ca)})\n- Marge brute HT : ${eur(d.marg)}\n- Achats HT : ${eur(d.achats)}\n- Stock fin de mois HT : ${v(d.stockFin)}\n- Pertes et offerts : ${eur(lossT)}\n\nLe détail est dans le fichier joint.\nBien cordialement,\n${S.bar || ""}`;
+      try { if (navigator.canShare && navigator.canShare({files: [f]})) { await navigator.share({files: [f], title, text: body}); return; } } catch (x) { if (x && x.name === "AbortError") return; }
+      $("biCsv").click();
+      location.href = `mailto:${encodeURIComponent(e)}?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(body + "\n\n(Pensez à joindre le fichier qui vient d'être téléchargé.)")}`; };
+  });
+}
+
 /* ================= Pertes et offerts ================= */
 function monthLosses() {
   const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0); const by = {};
@@ -1216,12 +1539,19 @@ function monthLosses() {
   const t = liveTotals(); for (const z in t.loss) add(z, t.loss[z].n, t.loss[z].c);
   return {by, total: Object.values(by).reduce((a, x) => a + x.c, 0)};
 }
+let releveDone = false;
+function ensureReleve() {
+  if (releveDone || isBarman() || !S.products.length) return; releveDone = true;
+  const m0 = monthBounds(0)[0]; if ((S.releves || []).some(r => new Date(r.le) >= m0)) return;
+  actReleve("auto").then(save).catch(() => { releveDone = false; });
+}
 function renderPertes() {
+  ensureReleve();
   const el = $("pertesCard"); if (!el) return; const m = monthLosses(), ks = Object.keys(m.by);
   el.innerHTML = (ks.length ? `<div class="row"><div class="grow"><div class="name">${eur(m.total)} ce mois-ci</div><div class="meta" style="white-space:normal">${ks.map(z => `${LOSS[z][1]} ${LOSS[z][0]} : ${eur(m.by[z].c)}`).join(" · ")}</div></div></div>`
     : `<div class="empty" style="padding:14px 6px 8px">Aucune perte notée ce mois-ci. Les offerts, la casse et les repas du personnel se notent dans le mode Service, ou ici.</div>`)
-    + `<div class="chbtns" style="padding:0 0 12px"><button class="mini" id="pDecl">Noter une perte</button>${(S.pertes || []).length ? `<button class="mini ghostmini" id="pList">Voir le détail</button>` : ""}</div>`;
-  $("pDecl").onclick = () => perteSheet(); if ($("pList")) $("pList").onclick = pertesList;
+    + `<div class="chbtns" style="padding:0 0 12px"><button class="mini" id="pDecl">Noter une perte</button><button class="mini ghostmini" id="pBil">📊 Bilan du mois</button>${(S.pertes || []).length ? `<button class="mini ghostmini" id="pList">Voir le détail</button>` : ""}</div>`;
+  $("pDecl").onclick = () => perteSheet(); $("pBil").onclick = () => bilanSheet(0); if ($("pList")) $("pList").onclick = pertesList;
 }
 function perteSheet() {
   const items = [...S.products.map(p => ({k: "p" + p.id, n: p.n, nm: p.n, kind: "p", o: p})),
@@ -1349,9 +1679,10 @@ function settingsSheet() {
     <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>
     <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
-    <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>
+    <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet;
+    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0);
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -1550,7 +1881,7 @@ async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
   S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom; liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir";
-  hideAuth(); closeSheet(); checkAdmin(); setSync("ok"); go(isBarman() ? "service" : "home");
+  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home");
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
 }
