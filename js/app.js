@@ -15,13 +15,20 @@ const isPatron = () => MODE === "demo" || (ETAB && ETAB.role === "patron");
 const isBarman = () => MODE === "cloud" && ETAB && ETAB.role === "barman";
 
 /* ================= Données ================= */
-const CATS = {Rhum:"🥃",Whisky:"🥃",Gin:"🍸",Vodka:"🍸",Anisé:"🌿",Liqueur:"🥃",Bière:"🍺","Bière pression":"🍺",Cidre:"🍏",Vin:"🍷",Champagne:"🍾",Soft:"🥤",Jus:"🍊",Sirop:"🍒",Eau:"💧",Autre:"🍶"};
+const CATS = {Rhum:"🥃",Whisky:"🥃",Gin:"🍸",Vodka:"🍸",Anisé:"🌿",Liqueur:"🥃",Bière:"🍺","Bière pression":"🍺",Cidre:"🍏",Vin:"🍷",Champagne:"🍾",Soft:"🥤",Jus:"🍊",Sirop:"🍒",Eau:"💧",Café:"☕",Thé:"🍵",Chocolat:"🍫",Lait:"🥛",Autre:"🍶"};
+/* Unités : liquides en cl, café et poudres en g, sachets et pièces à l'unité */
+const UNITS = {cl: ["cl", "centilitres (liquides)"], g: ["g", "grammes (café, poudre)"], pce: ["pièce", "pièces (sachets, capsules)"]};
+const uOf = p => p && UNITS[p.u] ? p.u : "cl";
+const uTxt = (p, n) => { const u = uOf(p); return u === "pce" ? (n > 1 ? "pièces" : "pièce") : u; };
+const CAT_UNIT = {Café: ["g", 1000, 7], Chocolat: ["g", 1000, 25], Thé: ["pce", 100, 1], Lait: ["cl", 100, 15]};
+const REC_CATS = [["Cocktails", "🍹 Cocktail"], ["Sans alcool", "🧃 Cocktail sans alcool"], ["Boissons chaudes", "☕ Boisson chaude"]];
+const recEmoji = c => c === "Boissons chaudes" ? "☕" : c === "Sans alcool" ? "🧃" : "🍹";
 /* Formats de vente types, par catégorie : [nom, cl (0 = toute la bouteille)] */
 const FMT_TYPES = {Vin: [["Verre 12 cl", 12], ["Pichet 25 cl", 25], ["Pichet 50 cl", 50], ["Bouteille", 0]], Champagne: [["Coupe 12 cl", 12], ["Bouteille", 0]],
   "Bière pression": [["Galopin 12,5 cl", 12.5], ["Demi 25 cl", 25], ["Pinte 50 cl", 50], ["Pichet 1 L", 100]], Cidre: [["Bolée 25 cl", 25], ["Bouteille", 0]],
-  _spirit: [["Double", -2], ["Bouteille (VIP)", 0]], Soft: [["Verre 25 cl", 25], ["Carafe 1 L", 100]], Jus: [["Verre 25 cl", 25], ["Carafe 1 L", 100]]};
+  _spirit: [["Double", -2], ["Bouteille (VIP)", 0]], Café: [["Double", -2], ["Allongé", -1], ["Ristretto", -1]], Thé: [["Théière (2 sachets)", -2]], Soft: [["Verre 25 cl", 25], ["Carafe 1 L", 100]], Jus: [["Verre 25 cl", 25], ["Carafe 1 L", 100]]};
 const SPIRITS = ["Rhum", "Whisky", "Gin", "Vodka", "Anisé", "Liqueur"];
-const contName = p => p && p.c === "Bière pression" ? "fût" : "bouteille";
+const contName = p => !p ? "bouteille" : p.c === "Bière pression" ? "fût" : ["Café", "Chocolat"].includes(p.c) ? "paquet" : p.c === "Thé" ? "boîte" : "bouteille";
 const KEY = "dosisbar.v2", QKEY = "dosisbar.queue", CKEY = "dosisbar.cache", EKEY = "dosisbar.etab", MKEY = "dosisbar.mode";
 const SAMPLE_P = [
   {n:"Rhum Ambré Caribe",c:"Rhum",a:1,b:15,cap:70,d:5,s:7,st:2,m:3},
@@ -35,7 +42,10 @@ const SAMPLE_P = [
   {n:"Coca-Cola 33cl",c:"Soft",a:0,b:0.9,cap:33,d:33,s:4.5,st:48,m:24},
   {n:"Jus d'orange pressé",c:"Jus",a:0,b:3.2,cap:100,d:20,s:4.5,st:6,m:3},
   {n:"Sirop de Grenadine",c:"Sirop",a:0,b:6,cap:100,d:3,s:2.5,st:3,m:1},
-  {n:"Eau minérale gazeuse",c:"Eau",a:0,b:1.1,cap:50,d:50,s:4,st:30,m:12}
+  {n:"Eau minérale gazeuse",c:"Eau",a:0,b:1.1,cap:50,d:50,s:4,st:30,m:12},
+  {n:"Café en grains",c:"Café",a:0,b:21,cap:1000,d:7,s:2.2,st:3,m:2,u:"g",fn:"Expresso",fm:[{id:"fmd7",n:"Double",d:14,s:3.8},{id:"fmd8",n:"Allongé",d:7,s:2.4}]},
+  {n:"Lait entier",c:"Lait",a:0,b:1.05,cap:100,d:15,s:0,st:12,m:6,al:["lait"]},
+  {n:"Thé (sachets)",c:"Thé",a:0,b:9,cap:100,d:1,s:3.5,st:2,m:1,u:"pce"}
 ];
 function seed() {
   const t = Date.now();
@@ -45,7 +55,10 @@ function seed() {
     {id:"d"+(t+100),n:"Cuba Libre",s:11,x:0.3,ing:[{p:id("Rhum Ambré Caribe"),cl:5},{p:id("Coca-Cola 33cl"),cl:20}]},
     {id:"d"+(t+101),n:"Mojito",s:12,x:0.9,ing:[{p:id("Rhum Ambré Caribe"),cl:5},{p:id("Eau minérale gazeuse"),cl:8}]},
     {id:"d"+(t+102),n:"Gin Tonic",s:12,x:0.8,ing:[{p:id("Gin Botanique"),cl:5}]},
-    {id:"d"+(t+103),n:"Virgin Sunrise",s:7,x:0.2,ing:[{p:id("Jus d'orange pressé"),cl:15},{p:id("Sirop de Grenadine"),cl:2}]}
+    {id:"d"+(t+103),n:"Virgin Sunrise",s:7,x:0.2,cat:"Sans alcool",ing:[{p:id("Jus d'orange pressé"),cl:15},{p:id("Sirop de Grenadine"),cl:2}]},
+    {id:"d"+(t+104),n:"Cappuccino",s:4.5,x:0.05,cat:"Boissons chaudes",ing:[{p:id("Café en grains"),cl:7},{p:id("Lait entier"),cl:15}]},
+    {id:"d"+(t+105),n:"Café crème",s:3.8,x:0.05,cat:"Boissons chaudes",ing:[{p:id("Café en grains"),cl:7},{p:id("Lait entier"),cl:10}]},
+    {id:"d"+(t+106),n:"Noisette",s:2.6,x:0.03,cat:"Boissons chaudes",ing:[{p:id("Café en grains"),cl:7},{p:id("Lait entier"),cl:2}]}
   ];
   const history = [], base = [212,188,264,301,176,342];
   for (let i = 6; i >= 1; i--) { const d = new Date(); d.setDate(d.getDate() - i);
@@ -126,6 +139,7 @@ function cockCalc(k) { let cost = num(k.x), alc = false;
   return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc}); }
 function suggest(cost, alc, target) { const ht = cost / (1 - target / 100); return ceil10(ht * (alc ? 1.2 : 1.1)); }
 function status(c, p, t = S.target) {
+  if (p && !(p.s > 0)) return ["Ingrédient", "b-ok"];
   if (chOn() && c.ht > 0 && c.net < 0) return ["À perte", "b-bad"];
   if (p && p.st < p.m) return ["Stock bas", "b-bad"];
   if (c.rate < t - 10) return ["Marge faible", "b-bad"];
@@ -248,10 +262,10 @@ function bottle(level, col) { const id = "bt" + (++gid), l = Math.max(0, Math.mi
   return `<svg width="30" height="38" viewBox="0 0 40 50" aria-hidden="true"><defs><clipPath id="${id}"><path d="${BOTTLE}"/></clipPath></defs><g clip-path="url(#${id})"><rect width="40" height="50" fill="rgba(244,237,228,.05)"/><rect x="0" y="${y}" width="40" height="50" fill="${col}"/></g><path d="${BOTTLE}" fill="none" stroke="rgba(244,237,228,.4)" stroke-width="1.6" stroke-linejoin="round"/></svg>`; }
 
 /* ================= Base en ligne : lecture ================= */
-const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[],f:r.fournisseur_id||"",fn:r.format_nom||"",pt:+r.perte_pct||0,fm:[]});
+const fromDbP = r => ({id:r.id,n:r.nom,c:r.categorie,a:r.alcool?1:0,b:+r.prix_achat_ht,cap:+r.contenance_cl,d:+r.dose_cl,s:+r.prix_vente_ttc,st:+r.stock,m:+r.stock_min,code:r.code_barre||"",al:r.allergenes||[],f:r.fournisseur_id||"",fn:r.format_nom||"",pt:+r.perte_pct||0,u:r.unite||"cl",fm:[]});
 const toDbP = p => ({etab_id:ETAB.id,nom:p.n,categorie:p.c,alcool:!!p.a,prix_achat_ht:p.b,contenance_cl:p.cap,dose_cl:p.d,allergenes:p.al||[],
   prix_vente_ttc:p.s,stock:Math.round(p.st*1000)/1000,stock_min:p.m,code_barre:p.code||null,modifie_le:new Date().toISOString(),
-  ...("f" in p ? {fournisseur_id: p.f || null} : {}), ...("fn" in p ? {format_nom: p.fn || null} : {}), ...("pt" in p ? {perte_pct: num(p.pt)} : {})});
+  ...("f" in p ? {fournisseur_id: p.f || null} : {}), ...("fn" in p ? {format_nom: p.fn || null} : {}), ...("pt" in p ? {perte_pct: num(p.pt)} : {}), ...("u" in p ? {unite: uOf(p)} : {})});
 async function q(promise) { const r = await promise; if (r.error) throw r.error; return r.data; }
 let lastLoad = 0;
 async function loadCloud() {
@@ -271,7 +285,7 @@ async function loadCloud() {
     let pf = []; try { pf = await q(sb.from("produit_formats").select("id,produit_id,nom,dose_cl,prix_ttc,ordre").eq("etab_id", e).order("ordre")); } catch (x) {}
     Object.assign(S, {bar: et.nom, target: et.objectif_spiritueux, target2: et.objectif_bouteilles, vol: et.volume_mois,
       products: pr.map(fromDbP).map(p => ({...p, fm: pf.filter(f => f.produit_id === p.id).map(f => ({id: f.id, n: f.nom, d: +f.dose_cl, s: +f.prix_ttc}))})),
-      cocktails: ck.map(c => ({id:c.id,n:c.nom,s:+c.prix_vente_ttc,x:+c.extras_ht,
+      cocktails: ck.map(c => ({id:c.id,n:c.nom,s:+c.prix_vente_ttc,x:+c.extras_ht,cat:c.categorie||"Cocktails",
         ing: ci.filter(i => i.cocktail_id === c.id).map(i => ({p:i.produit_id,cl:+i.cl}))})),
       history: sv.reverse().map(s => ({date:s.ouvert_le,marg:+s.marge_ht,ca:+s.ca_ttc,qty:s.verres,pertes:s.pertes||null})),
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
@@ -377,7 +391,7 @@ async function actDeleteProduct(id) {
 }
 async function actSaveCocktail(id, x) {
   if (cloud()) {
-    const row = {etab_id: ETAB.id, nom: x.n, prix_vente_ttc: x.s, extras_ht: x.x, modifie_le: new Date().toISOString()};
+    const row = {etab_id: ETAB.id, nom: x.n, prix_vente_ttc: x.s, extras_ht: x.x, categorie: x.cat || "Cocktails", modifie_le: new Date().toISOString()};
     let cid = id;
     if (id) await q(sb.from("cocktails").update(row).eq("id", id));
     else cid = (await q(sb.from("cocktails").insert(row).select("id").single())).id;
@@ -604,7 +618,7 @@ function renderHome() {
   const o = opportunities();
   $("oppTotal").textContent = o.length ? "+" + eur(o.reduce((s, i) => s + i.month, 0), 0) + " / mois" : "";
   $("opps").innerHTML = o.length ? o.slice(0, 4).map(i => `
-    <div class="row"><div class="emoji">${i.kind === "k" ? "🍹" : CATS[i.o.c] || "🍶"}</div>
+    <div class="row"><div class="emoji">${i.kind === "k" ? recEmoji(i.o.cat) : CATS[i.o.c] || "🍶"}</div>
     <div class="grow"><div class="name">${esc(i.o.n)}</div><div class="meta">${eur(i.o.s)} → <b style="color:var(--txt)">${eur(i.np)}</b> · ${i.step ? "1er palier vers " + i.t + " %" : "marge " + pct(i.c.rate) + " → " + i.t + " %"}</div></div>
     <div class="right"><div class="gain">+${eur(i.month, 0)}</div><div class="meta" style="margin:0">par mois</div><button class="mini" data-k="${i.key}" data-np="${i.np}">Appliquer</button></div></div>`).join("")
     + `<p class="tip" style="padding:0 0 12px">Estimation sur ${S.vol} verres vendus par mois et par produit (modifiable dans les réglages).</p>`
@@ -649,7 +663,7 @@ function renderMenu() {
   let it = allItems().filter(i => i.kind === menuKind && i.o.n.toLowerCase().includes(qs) && (menuKind === "k" || cat === "Toutes" || i.o.c === cat));
   it.sort((a, b) => sortBy === "name" ? a.o.n.localeCompare(b.o.n) : sortBy === "rate" ? b.c.rate - a.c.rate : b.c.marg - a.c.marg);
   $("menuList").innerHTML = it.length ? it.map(i => { const t = tgtI(i), st = status(i.c, i.kind === "p" ? i.o : null, t);
-    const meta = (i.kind === "p" ? `${i.o.fn && (i.o.fm || []).length ? esc(i.o.fn) + " · " : f1(i.o.d) + " cl · "}${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}${(i.o.fm || []).length ? ` · +${i.o.fm.length} format${i.o.fm.length > 1 ? "s" : ""}` : ""}`
+    const meta = (i.kind === "p" ? `${i.o.fn && (i.o.fm || []).length ? esc(i.o.fn) + " · " : f1(i.o.d) + " " + uTxt(i.o, i.o.d) + " · "}${eur(i.o.s)} TTC · coût ${eur(i.c.cost)}${(i.o.fm || []).length ? ` · +${i.o.fm.length} format${i.o.fm.length > 1 ? "s" : ""}` : ""}`
       : `${i.o.ing.map(g => { const p = byId(g.p); return p ? p.n.split(" ")[0] : "?"; }).join(" + ")} · ${eur(i.o.s)}`)
       ;
     return `<div class="row tap" data-k="${i.key}"><div style="flex:none">${glass(i.c.rate / 100, {w:26, col:tone(i.c.rate, t)})}</div>
@@ -670,7 +684,7 @@ function consume(key, dir) {
 }
 function serviceItems() {
   if (isBarman()) return (S.carte || []).map(c => ({key: c.key, kind: c.kind, n: c.n, c: c.c, s: c.s, out: !c.dispo}));
-  return allItems().map(i => ({key: i.key, kind: i.kind, n: i.kind === "p" ? pName(i.o) : i.o.n, c: i.kind === "k" ? "Cocktails" : i.o.c, s: i.o.s,
+  return allItems().filter(i => i.o.s > 0).map(i => ({key: i.key, kind: i.kind, n: i.kind === "p" ? pName(i.o) : i.o.n, c: i.kind === "k" ? (i.o.cat || "Cocktails") : i.o.c, s: i.o.s,
     out: i.kind === "p" || i.kind === "f" ? i.o.st * i.o.cap < i.o.d : i.o.ing.some(g => { const p = byId(g.p); return p && p.st * p.cap < g.cl; })}));
 }
 function renderService() {
@@ -705,7 +719,7 @@ function renderService() {
   $("tiles").innerHTML = list.length ? list.map(i => { const qn = liveTotal(i.key);
     return `<div class="tile ${qn ? "has" : ""} ${i.out ? "out" : ""}" data-k="${i.key}" role="button" tabindex="0" aria-label="${esc(i.n)}">
       <button class="minus" data-m="1" aria-label="Retirer un ${esc(i.n)}">−</button><span class="q">${qn}</span>
-      <div class="e">${i.kind === "k" ? "🍹" : CATS[i.c] || "🍶"}</div><div class="t">${esc(i.n)}</div><div class="p">${isLoss(S.zone) ? "0 €" : eur(zonePrice(i.s, S.zone))}</div></div>`; }).join("")
+      <div class="e">${i.kind === "k" ? recEmoji(i.c) : CATS[i.c] || "🍶"}</div><div class="t">${esc(i.n)}</div><div class="p">${isLoss(S.zone) ? "0 €" : eur(zonePrice(i.s, S.zone))}</div></div>`; }).join("")
     : `<div class="empty" style="grid-column:1/-1">La carte est vide.${barman ? " Le patron doit d'abord ajouter les produits." : " Ajoutez vos produits dans l'onglet Carte."}</div>`;
   $("tiles").querySelectorAll(".tile").forEach(el => el.onclick = e => tap(el.dataset.k, e.target.dataset.m ? -1 : 1));
 }
@@ -1053,12 +1067,13 @@ function productSheet(id, preset) {
       <div class="field"><label for="fC">Catégorie</label><select id="fC">${opts(Object.keys(CATS).map(c => [c, CATS[c] + "  " + c]), p.c)}</select></div>
       <div class="field"><label for="fA">Type</label><select id="fA">${opts([[1,"Alcool · 20 %"],[0,"Sans alcool · 10 %"]], p.a)}</select></div>
       <div class="field"><label for="fB" id="fBl">Prix ${contName(p) === "fût" ? "du fût" : "bouteille"} HT (€)</label><input id="fB" inputmode="decimal" value="${p.b === "" ? "" : f1x(p.b)}"></div>
-      <div class="field"><label for="fCap">Contenance (cl)</label><input id="fCap" inputmode="decimal" value="${f1x(p.cap)}"><div class="tip" id="fCapT" style="padding:4px 0 0">${contName(p) === "fût" ? "Fût de 30 L = 3000 cl" : ""}</div></div>
+      <div class="field"><label for="fCap" id="fCapl">Contenance (${uOf(p)})</label><input id="fCap" inputmode="decimal" value="${f1x(p.cap)}"><div class="tip" id="fCapT" style="padding:4px 0 0">${contName(p) === "fût" ? "Fût de 30 L = 3000 cl" : ""}</div></div>
+      <div class="field" style="grid-column:1/-1"><label for="fU">Se mesure en</label><select id="fU">${opts(Object.entries(UNITS).map(([k, v]) => [k, v[1]]), uOf(p))}</select></div>
     </div>
     <div class="fmtbox">
       <div class="lbl" style="margin:2px 0 8px"><span>Formats de vente</span></div>
       <div class="fmrow fmmain"><input id="fFn" value="${esc(p.fn || "")}" placeholder="Verre, demi…" maxlength="40" aria-label="Nom du format principal">
-        <div class="field"><label for="fD">cl servis</label><input id="fD" inputmode="decimal" value="${f1x(p.d)}"></div>
+        <div class="field"><label for="fD" id="fDl">${uOf(p)} servis</label><input id="fD" inputmode="decimal" value="${f1x(p.d)}"></div>
         <div class="field"><label for="fS">Prix TTC</label><input id="fS" inputmode="decimal" value="${p.s === "" ? "" : f1x(p.s)}"></div><span class="fmr" id="fmr_main"></span></div>
       <div id="fmL"></div>
       <div class="fmadd"><button type="button" class="mini ghostmini" id="fmAdd">+ Ajouter un format</button><span id="fmTypes"></span></div>
@@ -1075,7 +1090,7 @@ function productSheet(id, preset) {
     <button class="btn" id="fSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="fDel">Supprimer ce produit</button>` : ""}`, () => {
     let fm = (p.fm || []).map(f => ({...f}));
     const read = () => ({n:$("fN").value.trim(),c:$("fC").value,a:+$("fA").value,b:num($("fB").value),cap:num($("fCap").value),d:num($("fD").value),s:num($("fS").value),st:num($("fSt").value),m:num($("fM").value),code:$("fCode").value.trim(),al:algRead(),...($("fF") ? {f: $("fF").value} : {}),
-      fn: $("fFn").value.trim(), pt: +$("fPt").value, fm: fm.filter(f => f.n && f.d > 0).map(f => ({...f}))});
+      fn: $("fFn").value.trim(), pt: +$("fPt").value, u: $("fU").value, fm: fm.filter(f => f.n && f.d > 0).map(f => ({...f}))});
     algArm();
     const fmDraw = () => {
       $("fmL").innerHTML = fm.map((f, k) => `<div class="fmrow"><input data-k="${k}" data-f="n" value="${esc(f.n)}" placeholder="Nom" maxlength="40" aria-label="Nom du format">
@@ -1094,7 +1109,9 @@ function productSheet(id, preset) {
     const fmRates = x => { const t = (d, s) => { const c = prodCalc({...x, d, s}), T = d >= x.cap ? (S.target2 ?? 65) : S.target; return `<span style="color:${tone(c.rate, T)}">${pct(c.rate)}</span>`; };
       $("fmr_main").innerHTML = x.d > 0 && x.s > 0 ? t(x.d, x.s) : ""; fm.forEach((f, k) => { const e = $("fmr_" + k); if (e) e.innerHTML = f.d > 0 && f.s > 0 ? t(f.d, f.s) : ""; });
       $("fPtl").textContent = x.pt + " %"; const cn = contName(x);
-      $("fBl").textContent = `Prix ${cn === "fût" ? "du fût" : "bouteille"} HT (€)`; $("fStl").textContent = `Stock (${cn}s)`; $("fCapT").textContent = cn === "fût" ? "Fût de 30 L = 3000 cl" : ""; };
+      $("fBl").textContent = `Prix ${cn === "fût" ? "du fût" : cn === "paquet" ? "du paquet" : cn === "boîte" ? "de la boîte" : "bouteille"} HT (€)`; $("fStl").textContent = `Stock (${cn}s)`;
+      const u = uOf(x); $("fCapl").textContent = `Contenance (${u === "pce" ? "pièces" : u})`; $("fDl").textContent = `${u === "pce" ? "pièces" : u} servis`;
+      $("fCapT").textContent = cn === "fût" ? "Fût de 30 L = 3000 cl" : cn === "paquet" && u === "g" ? "Paquet de 1 kg = 1000 g · expresso ≈ 7 g" : cn === "boîte" ? "Nombre de sachets dans la boîte" : ""; };
     fmDraw();
     const scanFill = () => openScanner("Visez le code-barres de la bouteille", async code => {
       closeScanner(); $("fCode").value = code;
@@ -1114,11 +1131,15 @@ function productSheet(id, preset) {
     $("fScan").onclick = scanFill; if ($("fScanTop")) $("fScanTop").onclick = scanFill;
     const upd = () => { const x = read(), c = prodCalc(x), T = tgtP(x), sg = suggest(c.cost, !!x.a, T); fmRates(x);
       if (document.activeElement === $("fC")) fmDraw();
-      $("fRes").innerHTML = `${fm.length ? `<div style="grid-column:1/-1" class="l">Format principal${x.fn ? " : " + esc(x.fn) : ""}</div>` : ""}<div><div class="l">Coût du verre</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
+      const W = ["Café", "Thé", "Chocolat"].includes(x.c) ? ["de la tasse", "par tasse"] : ["du verre", "par verre"];
+      $("fRes").innerHTML = `${fm.length ? `<div style="grid-column:1/-1" class="l">Format principal${x.fn ? " : " + esc(x.fn) : ""}</div>` : ""}<div><div class="l">Coût ${W[0]}</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné ${W[1]}</div><div class="v h">${eur(c.marg)}</div></div>
       <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate, T)}">${pct(c.rate)}</div></div>
       <div><div class="l">Prix conseillé (${T} %)</div><div class="v h">${eur(sg)}</div>${isFinite(c.rate) && c.rate < T ? `<button class="mini" id="useSg">Utiliser</button>` : ""}</div>${zonesLine(x.s, c)}${chBlock(c, !!x.a, "fS", upd)}`;
       const u = $("useSg"); if (u) u.onclick = () => { $("fS").value = f1x(sg); upd(); }; armCh("fS", upd); };
-    $("sBody").querySelectorAll("input,select").forEach(e => { if (!e.dataset.f) e.oninput = upd; }); $("fC").onchange = () => { fmDraw(); upd(); }; upd();
+    $("sBody").querySelectorAll("input,select").forEach(e => { if (!e.dataset.f) e.oninput = upd; }); $("fC").onchange = () => { const cu0 = CAT_UNIT[$("fC").value];
+      if (cu0 && !id) { $("fU").value = cu0[0]; $("fCap").value = f1x(cu0[1]); $("fD").value = f1x(cu0[2]); if ($("fC").value !== "Lait") $("fA").value = "0"; }
+      if ($("fC").value === "Lait" && !id) $("fS").value = "0";
+      fmDraw(); upd(); }; upd();
     $("fSave").onclick = async () => { const x = read();
       if (!x.n) return toast("Donnez un nom au produit");
       if (fm.some(f => !f.n || !(f.d > 0))) return toast("Chaque format a besoin d'un nom et d'une quantité");
@@ -1131,37 +1152,39 @@ function productSheet(id, preset) {
 }
 function cocktailSheet(id) {
   if (!S.products.length) return toast("Ajoutez d'abord des produits à votre carte");
-  const k = id ? S.cocktails.find(c => c.id === id) : {n:"",s:"",x:0.3,ing:[{p:S.products[0].id,cl:5}]};
+  const k = id ? S.cocktails.find(c => c.id === id) : {n:"",s:"",x:0.3,cat:"Cocktails",ing:[{p:S.products[0].id,cl:5}]};
   let ing = k.ing.map(g => ({...g}));
   const prodOpts = sel => opts(S.products.map(p => [p.id, p.n]), sel);
-  openSheet(`<h2 class="h">${id ? esc(k.n) : "Nouveau cocktail"}</h2><div class="sub">Le coût se calcule ingrédient par ingrédient</div>
-    <div class="field"><label for="kN">Nom du cocktail</label><input id="kN" value="${esc(k.n)}" placeholder="Ex : Daïquiri" maxlength="80"></div>
+  openSheet(`<h2 class="h">${id ? esc(k.n) : "Nouvelle recette"}</h2><div class="sub">Cocktail, cocktail sans alcool ou boisson chaude : le coût se calcule ingrédient par ingrédient</div>
+    <div class="two"><div class="field"><label for="kN">Nom</label><input id="kN" value="${esc(k.n)}" placeholder="Ex : Daïquiri, Cappuccino" maxlength="80"></div>
+    <div class="field"><label for="kT">Type</label><select id="kT">${opts(REC_CATS, k.cat || "Cocktails")}</select></div></div>
     <div class="two"><div class="field"><label for="kS">Prix de vente TTC (€)</label><input id="kS" inputmode="decimal" value="${f1x(k.s)}"></div>
-    <div class="field"><label for="kX">Garniture, sucre, glace (€)</label><input id="kX" inputmode="decimal" value="${f1x(k.x)}"></div></div>
+    <div class="field"><label for="kX">Garniture, sucre, glace, gobelet (€)</label><input id="kX" inputmode="decimal" value="${f1x(k.x)}"></div></div>
     <div class="lbl" style="margin-top:4px"><span>Ingrédients de la carte</span></div><div id="kIng"></div>
     <button class="btn ghost" id="kAdd" style="margin-bottom:12px">+ Ajouter un ingrédient</button>
     <div class="card" style="background:var(--card2)"><div class="res" id="kRes"></div></div>
-    <button class="btn" id="kSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="kDel">Supprimer ce cocktail</button>` : ""}`, () => {
+    <button class="btn" id="kSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="kDel">Supprimer cette recette</button>` : ""}`, () => {
     const drawIng = () => { $("kIng").innerHTML = ing.map((g, i) => `<div class="ing"><div class="field"><select data-i="${i}" data-f="p" aria-label="Ingrédient">${prodOpts(g.p)}</select></div>
-      <div class="field"><input data-i="${i}" data-f="cl" inputmode="decimal" value="${f1x(g.cl)}" aria-label="Quantité en cl"></div><button class="x" data-del="${i}" aria-label="Retirer l'ingrédient">✕</button></div>`).join("");
-      $("kIng").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const g = ing[+e.dataset.i]; if (e.dataset.f === "p") g.p = e.value; else g.cl = num(e.value); upd(); });
+      <div class="field"><input data-i="${i}" data-f="cl" inputmode="decimal" value="${f1x(g.cl)}" aria-label="Quantité"></div><span class="cuu">${esc(uTxt(byId(g.p), g.cl))}</span><button class="x" data-del="${i}" aria-label="Retirer l'ingrédient">✕</button></div>`).join("");
+      $("kIng").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const g = ing[+e.dataset.i]; if (e.dataset.f === "p") { g.p = e.value; drawIng(); } else g.cl = num(e.value); upd(); });
       $("kIng").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { ing.splice(+b.dataset.del, 1); drawIng(); upd(); }); };
-    const read = () => ({n:$("kN").value.trim(),s:num($("kS").value),x:num($("kX").value),ing:ing.filter(g => byId(g.p) && g.cl > 0).map(g => ({...g}))});
+    const read = () => ({n:$("kN").value.trim(),cat:$("kT").value,s:num($("kS").value),x:num($("kX").value),ing:ing.filter(g => byId(g.p) && g.cl > 0).map(g => ({...g}))});
     const upd = () => { const x = read(), c = cockCalc(x), sg = suggest(c.cost, c.alc, S.target);
       const lines = x.ing.map(g => { const p = byId(g.p); return `${esc(p.n.split(" ")[0])} ${eur(pcost(p, g.cl))}`; }).join(" + ");
-      $("kRes").innerHTML = `<div><div class="l">Coût du cocktail</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par verre</div><div class="v h">${eur(c.marg)}</div></div>
+      const hot = x.cat === "Boissons chaudes";
+      $("kRes").innerHTML = `<div><div class="l">Coût ${hot ? "de la boisson" : "du cocktail"}</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par ${hot ? "tasse" : "verre"}</div><div class="v h">${eur(c.marg)}</div></div>
        <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Prix conseillé (${S.target} %)</div><div class="v h">${eur(sg)}</div></div>
        <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${zonesLine(x.s, c)}
        <div style="grid-column:1/-1"><div class="l">Allergènes (d'après les produits)</div><div style="font-size:12px;margin-top:3px">${esc(algText(cockAlg(x)))}</div></div>${chBlock(c, c.alc, "kS", upd)}`; armCh("kS", upd); };
-    drawIng(); upd(); ["kN","kS","kX"].forEach(i => $(i).oninput = upd);
+    drawIng(); upd(); ["kN","kS","kX","kT"].forEach(i => $(i).oninput = upd);
     $("kAdd").onclick = () => { const u = S.products.find(p => !ing.some(g => g.p === p.id)) || S.products[0]; ing.push({p: u.id, cl: 2}); drawIng(); upd(); };
     $("kSave").onclick = async () => { const x = read();
-      if (!x.n) return toast("Donnez un nom au cocktail");
+      if (!x.n) return toast("Donnez un nom à la recette");
       if (!x.ing.length) return toast("Ajoutez au moins un ingrédient");
       $("kSave").classList.add("busy");
-      if (await act(() => actSaveCocktail(id, x), id ? "Cocktail mis à jour ✓" : "Cocktail créé ✓")) closeSheet();
+      if (await act(() => actSaveCocktail(id, x), id ? "Recette mise à jour ✓" : "Recette créée ✓")) closeSheet();
       else $("kSave").classList.remove("busy"); };
-    if (id) armBtn($("kDel"), "Toucher encore pour supprimer", async () => { if (await act(() => actDeleteCocktail(id), "Cocktail supprimé")) closeSheet(); });
+    if (id) armBtn($("kDel"), "Toucher encore pour supprimer", async () => { if (await act(() => actDeleteCocktail(id), "Recette supprimée")) closeSheet(); });
   });
 }
 
@@ -1661,7 +1684,7 @@ function pertesList() {
 /* ================= Carte des allergènes ================= */
 function allergenSheet() {
   const rows = [...(restoOn() ? cu().d.map(d => ({n: d.n, g: "Cuisine", a: linesAlg(d.lines)})) : []),
-    ...S.cocktails.map(k => ({n: k.n, g: "Cocktails", a: cockAlg(k)})), ...S.products.map(p => ({n: p.n, g: "Boissons", a: p.al || []}))];
+    ...S.cocktails.map(k => ({n: k.n, g: k.cat === "Boissons chaudes" ? "Boissons chaudes" : "Cocktails", a: cockAlg(k)})), ...S.products.map(p => ({n: p.n, g: "Boissons", a: p.al || []}))];
   const groups = [...new Set(rows.map(r => r.g))];
   const html = groups.map(g => `<h3>${g}</h3><table><tbody>${rows.filter(r => r.g === g).map(r => `<tr><td>${esc(r.n)}</td><td>${esc(r.a.length ? r.a.map(algName).join(", ") : "—")}</td></tr>`).join("")}</tbody></table>`).join("");
   openSheet(`<h2 class="h">Carte des allergènes</h2><div class="sub">Les 14 allergènes réglementaires, d'après les ingrédients que vous avez renseignés. Vérifiez-la avant de l'afficher.</div>
