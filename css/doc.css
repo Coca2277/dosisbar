@@ -27,3 +27,4 @@ th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);verti
 th{color:var(--mut);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
 footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:14px;display:flex;flex-wrap:wrap;gap:8px 18px}
 @media (max-width:560px){dl{grid-template-columns:1fr}dt{margin-top:6px}table{font-size:14px}}
+.logo .lmark{display:block;flex:none}

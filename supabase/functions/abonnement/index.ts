@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       const essai = formule === "pilote";
       const p = await mollie(`/customers/${client}/payments`, "POST", {
         amount: { currency: "EUR", value: essai ? "0.01" : euros(t.ttc) },
-        description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Restauration" : ""} – 1er mois`,
+        description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – 1er mois`,
         sequenceType: "first",
         redirectUrl: APP + "?abonnement=retour",
         webhookUrl: url + "/functions/v1/mollie-webhook",
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       const t = tarif(formule, resto);
       await mollie(`/customers/${ab.mollie_client}/subscriptions/${ab.mollie_abonnement}`, "PATCH", {
         amount: { currency: "EUR", value: euros(t.ttc) },
-        description: `${NOMS[formule]}${resto ? " + Restauration" : ""} – ${etab.slice(0, 8)}`,
+        description: `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${etab.slice(0, 8)}`,
       });
       await admin.from("abonnements").update({ formule, resto, montant_ttc: t.ttc, maj: new Date().toISOString() }).eq("etab_id", etab);
       return json({ ok: true });

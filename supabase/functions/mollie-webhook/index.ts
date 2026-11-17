@@ -37,7 +37,7 @@ function htmlFacture(c: Client, lignes: Ligne[], ht: number, tva: number, ttc: n
 <body style="margin:0;background:#f6f2ec;font-family:Helvetica,Arial,sans-serif;color:#1d1916">
 <div style="max-width:720px;margin:0 auto;background:#fff;padding:36px 32px;font-size:14px;line-height:1.5">
 <table style="width:100%;border-collapse:collapse"><tr>
-<td style="vertical-align:top"><div style="font-size:22px;font-weight:700">Dosis <span style="color:#c27a12">Bar</span></div>
+<td style="vertical-align:top"><div style="font-size:22px;font-weight:700"><img src="https://dosisbar.com/icons/logo-facture.png" width="21" height="24" alt="" style="vertical-align:-3px;margin-right:8px">Dosis <span style="color:#c27a12">Bar</span></div>
 <div style="margin-top:8px"><b>${VENDEUR.nom}</b><br>${VENDEUR.forme}<br>${VENDEUR.adresse}<br>${VENDEUR.rcs} · SIRET ${VENDEUR.siret}<br>TVA intracommunautaire ${VENDEUR.tva}<br>${VENDEUR.email}</div></td>
 <td style="vertical-align:top;text-align:right"><div style="font-size:24px;font-weight:700">Facture</div>
 <div>N° <b>{{NUMERO}}</b></div><div>Date : ${jour(new Date())}</div></td></tr></table>
@@ -70,7 +70,7 @@ async function facturer(admin: any, p: any, etab: string, ab: Record<string, unk
   };
   const formule = String(p.metadata?.formule || ab?.formule || "bar");
   const resto = p.metadata?.resto ?? ab?.resto;
-  const nom = `Abonnement ${NOMS[formule] || "Dosis Bar"}${resto && formule !== "pro" ? " + option Restauration" : ""}`;
+  const nom = `Abonnement ${NOMS[formule] || "Dosis Bar"}${resto && formule !== "pro" ? " + Dosis Resto" : ""}`;
   const payee = new Date(p.paidAt || Date.now());
   const verif = p.sequenceType === "first" && formule === "pilote";
   const ht = Math.round((ttc / 1.2) * 100) / 100, tva = Math.round((ttc - ht) * 100) / 100;
@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
         const debut = plusMois(new Date(), formule === "pilote" ? 2 : 1);
         const s = await mollie(`/customers/${p.customerId}/subscriptions`, "POST", {
           amount: { currency: "EUR", value: euros(ttc) }, interval: "1 month", startDate: iso(debut),
-          description: `${NOMS[formule]}${resto ? " + Restauration" : ""} – ${etab.slice(0, 8)}`,
+          description: `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${etab.slice(0, 8)}`,
           webhookUrl: url + "/functions/v1/mollie-webhook", metadata: { etab },
         });
         await admin.from("abonnements").upsert({

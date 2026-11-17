@@ -572,7 +572,7 @@ function navSync() {
   document.querySelectorAll("nav button").forEach(b => { b.classList.toggle("on", b.dataset.v === cur);
     b.hidden = (isBarman() && b.dataset.v !== "service") || (b.dataset.v === "cuisine" && !restoOn()); });
   const t = document.querySelector("#v-menu > h2"), st = document.querySelector("#v-menu > .sub");
-  if (t) t.textContent = menuKind === "c" ? "Ma cuisine" : "Ma carte";
+  if (t) t.innerHTML = menuKind === "c" ? `<img src="icons/logo-resto.svg" width="24" height="28" alt="" style="vertical-align:-4px;margin-right:8px">Ma cuisine` : "Ma carte";
   if (st) st.textContent = menuKind === "c" ? "Plats, préparations et ingrédients" : "Touchez un produit pour le modifier";
 }
 function go(v) {
@@ -1336,20 +1336,20 @@ function platSheet(id) {
 }
 const METIERS = [["bar","Bar"],["bar-resto","Bar-restaurant"],["resto","Restaurant"],["fastfood","Restauration rapide"],["traiteur","Traiteur"]];
 function restoSheet() {
-  if (!restoAllowed()) return openSheet(`<h2 class="h">Option Restauration</h2><div class="sub">Fiches plats, préparations, coût de l'assiette et allergènes, dans la même app que votre bar.</div>
+  if (!restoAllowed()) return openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations, coût de l'assiette et allergènes, dans la même app que votre bar.</div>
     <div class="card"><div class="name">+ 20 € HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
-    <button class="btn" id="roAbo">Ajouter l'option à mon abonnement</button>`, () => { $("roAbo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
+    <button class="btn" id="roAbo">Ajouter Dosis Resto à mon abonnement</button>`, () => { $("roAbo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
   const r = Object.assign({on: false, metier: "bar-resto", target: 70}, S.resto || {});
-  openSheet(`<h2 class="h">Option Restauration</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
+  openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
     <div class="field"><label for="roM">Votre activité</label><select id="roM">${opts(METIERS.filter(m => m[0] !== "bar"), r.metier)}</select></div>
     <div class="field"><label for="roT">Objectif de marge cuisine : <b id="roTl" style="color:var(--amber2)">${r.target} %</b></label><input id="roT" class="range" type="range" min="50" max="85" value="${r.target}">
       <div class="tip" style="padding:6px 0 0">70 % de marge = 30 % de coût matière, un repère courant en restauration.</div></div>
-    <button class="btn" id="roSave">${r.on ? "Enregistrer" : "Activer l'option Restauration"}</button>
+    <button class="btn" id="roSave">${r.on ? "Enregistrer" : "Activer Dosis Resto"}</button>
     ${r.on ? `<div class="gap"></div><button class="btn danger" id="roOff">Désactiver l'option</button><p class="tip" style="padding:8px 0 0">Vos fiches sont conservées si vous la réactivez.</p>` : ""}`, () => {
     $("roT").oninput = () => $("roTl").textContent = $("roT").value + " %";
     $("roSave").onclick = async () => { $("roSave").classList.add("busy");
       const x = {on: true, metier: $("roM").value, target: +$("roT").value};
-      if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Option Restauration activée ✓")) { closeSheet(); if (!r.on) { cuTab = MODE === "demo" ? "d" : "i"; go("cuisine"); } else navSync(); }
+      if (await act(() => actResto(x), r.on ? "Réglages enregistrés ✓" : "Dosis Resto activé ✓")) { closeSheet(); if (!r.on) { cuTab = MODE === "demo" ? "d" : "i"; go("cuisine"); } else navSync(); }
       else $("roSave").classList.remove("busy"); };
     if ($("roOff")) armBtn($("roOff"), "Toucher encore pour désactiver", async () => { if (await act(() => actResto({...r, on: false}), "Option désactivée")) closeSheet(); });
   });
@@ -1670,12 +1670,12 @@ function aboSheet() {
   const card = (k, desc) => `<button type="button" class="abo ${f === k ? "on" : ""}" data-f="${k}" ${actif && k === "pilote" && a.formule !== "pilote" ? "disabled" : ""}>
       <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eur(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
   openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement SEPA. Sans engagement, résiliable à tout moment.</div>
-    ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Restauration" : "") : "Abonnement"}</div>
+    ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Dosis Resto" : "") : "Abonnement"}</div>
       <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + " TTC / mois" : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
     <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
-    <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Restauration incluse. Factures et caisse connectée bientôt.")}</div>
+    <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Dosis Resto inclus. Factures et caisse connectée bientôt.")}</div>
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
-    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Option Restauration</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
+    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
     <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
     <div class="lbl"><span>Informations de facturation</span></div>
     <div class="field"><label for="fxNom">Raison sociale</label><input id="fxNom" maxlength="120" value="${esc(fx.nom || ETAB.nom || "")}" placeholder="Nom de la société ou de l'entreprise"></div>
@@ -1875,7 +1875,7 @@ function settingsSheet() {
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
     <button class="btn" id="sSave">Enregistrer</button>
     <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>
-    <button class="btn ghost" id="sRo" style="margin-top:10px">🍽️ Option Restauration · ${restoOn() ? "activée" : "désactivée"}</button>
+    <button class="btn ghost" id="sRo" style="margin-top:10px"><img src="icons/logo-resto.svg" width="16" height="18" alt="" style="vertical-align:-3px;margin-right:4px"> Dosis Resto · ${restoOn() ? "activé" : "désactivé"}</button>
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
     <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>
     <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>
@@ -1985,7 +1985,7 @@ function checkAdmin() { if (MODE === "cloud" && sb) sb.rpc("est_admin").then(({d
 
 /* ================= Connexion, compte, établissement ================= */
 function showAuth(screen, msg) {
-  const A = $("auth"), brand = `<div class="brand">${glass(.62, {w:56, wave:true})}<h1 class="h">Dosis <span>Bar</span></h1><p>Ce que chaque verre vous rapporte vraiment.</p></div>`;
+  const A = $("auth"), brand = `<div class="brand"><img src="icons/logo-bar.svg" width="52" height="60" alt="" style="display:block;margin:0 auto 6px"><h1 class="h">Dosis <span>Bar</span></h1><p>Ce que chaque verre vous rapporte vraiment.</p></div>`;
   const demoLink = `<div class="center" style="margin-top:14px"><button class="link" id="aDemo">Essayer sans compte</button></div>`;
   let html = "";
   if (screen === "login") html = `${brand}<h2 class="h" id="authTitle">Connexion</h2><div class="sub">Retrouvez votre bar sur tous vos appareils.</div>
@@ -2132,7 +2132,6 @@ function armBtn(btn, armedLabel, fn) { const orig = btn.textContent; let t;
 let tt; function toast(m) { $("toast").textContent = m; $("toast").classList.add("on"); clearTimeout(tt); tt = setTimeout(() => $("toast").classList.remove("on"), 2400); }
 
 /* ================= Démarrage ================= */
-$("logoGlass").innerHTML = glass(.62, {w:24});
 $("sideGlass").innerHTML = glass(.62, {w:40});
 if (!CLOUD) { const n = $("sideNote"); if (n) n.textContent = "Version d'essai : les données restent dans ce navigateur."; }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { flush(); bgReload(); } });

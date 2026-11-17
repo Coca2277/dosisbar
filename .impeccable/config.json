@@ -20,6 +20,11 @@
         ],
         "createdAt": "2026-11-15T08:54:53.800Z",
         "reason": "Claude: seul le titre d'affichage .fuite p.big (30–56px, Bricolage 700) est concerné ; interlignage serré voulu pour un titre, le texte courant est à 1.6"
+      },
+      {
+        "rule": "overused-font",
+        "value": "helvetica",
+        "createdAt": "2026-11-17T10:10:01.072Z"
       }
     ]
   }
