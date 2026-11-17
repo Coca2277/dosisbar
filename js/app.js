@@ -185,7 +185,20 @@ function buyInfo(o) { // quantité et prix tels qu'achetés → prix par kg / L 
   const b = BUY_U[ua], base = qa / b[1]; return {ua, qa, pa, u: b[0], prix: base > 0 ? pa / base : 0}; }
 const CU_CATS = {"Entrée":"🥗","Plat":"🍽️","Dessert":"🍰","Burger, sandwich":"🍔","Pizza":"🍕","Accompagnement":"🍟","Planche, tapas":"🧀","Menu, formule":"🍱","Autre":"🍴"};
 const cu = () => S.cu || (S.cu = {i: [], r: [], d: []});
-const restoOn = () => !!(S.resto && S.resto.on);
+/* Accès selon l'abonnement (essai 14 jours, abonné, lecture seule) — calculé par la base : acces_etab */
+const ACC = () => MODE === "cloud" ? (S.acces || {etat: "essai", resto: true}) : {etat: "demo", resto: true};
+const canEdit = () => ACC().etat !== "lecture";
+const restoAllowed = () => ACC().resto !== false;
+const LOCK = "LECTURE_SEULE";
+function needEdit() { if (!canEdit()) throw new Error(LOCK); }
+const isLock = e => /LECTURE_SEULE|Essai gratuit terminé/.test((e && e.message) || String(e));
+const daysLeft = d => Math.max(0, Math.ceil((new Date(d + "T00:00:00") - new Date(new Date().toDateString())) / 864e5));
+function lockSheet() {
+  if (isBarman()) return toast("L'essai gratuit de l'établissement est terminé : demandez au patron de s'abonner.");
+  aboSheet(); toast("Essai gratuit terminé : abonnez-vous pour continuer");
+}
+async function accRefresh() { if (!cloud()) return; try { S.acces = await q(sb.rpc("acces_etab", {p_etab: ETAB.id})); save(); } catch (e) {} }
+const restoOn = () => !!(S.resto && S.resto.on) && restoAllowed();
 const cuTarget = () => (S.resto && S.resto.target) || 70;
 const cuFind = (t, id) => (cu()[t] || []).find(x => String(x.id) === String(id));
 function cuUnit(t, id) { const o = cuFind(t, id); if (!o) return ""; return t === "i" ? (CU_U[o.u] || CU_U.kg)[0] : o.ru || "g"; }
@@ -270,6 +283,7 @@ async function q(promise) { const r = await promise; if (r.error) throw r.error;
 let lastLoad = 0;
 async function loadCloud() {
   const e = ETAB.id;
+  try { S.acces = await q(sb.rpc("acces_etab", {p_etab: e})); } catch (x) { if (isNetErr(x)) throw x; }
   if (isBarman()) {
     const carte = await q(sb.rpc("carte_service", {p_etab: e}));
     try { const eo = await q(sb.from("etablissements").select("options").eq("id", e).single()); S.opts = eo.options || {}; } catch (x) { S.opts = S.opts || {}; }
@@ -356,10 +370,10 @@ function setSync(s) {
 /* ================= Actions (écrivent en local ou en ligne) ================= */
 async function act(fn, okMsg) {
   try { await fn(); save(); render(); if (okMsg) toast(okMsg); return true; }
-  catch (e) { toast(frErr(e)); if (isNetErr(e)) setSync("off"); return false; }
+  catch (e) { if (isLock(e)) { lockSheet(); return false; } toast(frErr(e)); if (isNetErr(e)) setSync("off"); return false; }
 }
 const cloud = () => MODE === "cloud";
-async function actSaveProduct(id, x) {
+async function actSaveProduct(id, x) { needEdit();
   const fm = x.fm; x = {...x}; delete x.fm;
   if (cloud()) {
     if (id) { await q(sb.from("produits").update(toDbP(x)).eq("id", id)); Object.assign(byId(id), x); }
@@ -367,7 +381,7 @@ async function actSaveProduct(id, x) {
   } else { if (id) Object.assign(byId(id), x); else { id = "d" + Date.now(); S.products.unshift({id, ...x, fm: []}); } }
   if (fm) await actSaveFormats(id, fm);
 }
-async function actSaveFormats(pid, list) {
+async function actSaveFormats(pid, list) { needEdit();
   const p = byId(pid), old = p.fm || [], keep = list.filter(f => f.id && !String(f.id).startsWith("n"));
   if (cloud()) {
     const gone = old.filter(o => !keep.some(f => f.id === o.id)).map(o => o.id);
@@ -381,7 +395,7 @@ async function actSaveFormats(pid, list) {
   for (const o of old) if (!list.some(f => f.id === o.id)) for (const k in S.live) if (liveSplit(k)[0] === "f" + o.id) delete S.live[k];
   p.fm = list.map(f => ({id: f.id, n: f.n, d: f.d, s: f.s}));
 }
-async function actDeleteProduct(id) {
+async function actDeleteProduct(id) { needEdit();
   if (cloud()) await q(sb.from("produits").delete().eq("id", id));
   const fidsDel = ((byId(id) || {}).fm || []).map(f => "f" + f.id);
   for (const k in S.live) if (fidsDel.includes(liveSplit(k)[0])) delete S.live[k];
@@ -390,7 +404,7 @@ async function actDeleteProduct(id) {
   const fids = ((S.products.find(x => x.id === id) || {}).fm || []).map(f => "f" + f.id);
   for (const k in S.live) if (liveSplit(k)[0] === "p" + id || fids.includes(liveSplit(k)[0])) delete S.live[k];
 }
-async function actSaveCocktail(id, x) {
+async function actSaveCocktail(id, x) { needEdit();
   if (cloud()) {
     const row = {etab_id: ETAB.id, nom: x.n, prix_vente_ttc: x.s, extras_ht: x.x, categorie: x.cat || "Cocktails", modifie_le: new Date().toISOString()};
     let cid = id;
@@ -401,17 +415,17 @@ async function actSaveCocktail(id, x) {
     if (id) Object.assign(S.cocktails.find(c => c.id === id), x); else S.cocktails.unshift({id: cid, ...x});
   } else { if (id) Object.assign(S.cocktails.find(c => c.id === id), x); else S.cocktails.unshift({id: "d" + Date.now(), ...x}); }
 }
-async function actDeleteCocktail(id) {
+async function actDeleteCocktail(id) { needEdit();
   if (cloud()) await q(sb.from("cocktails").delete().eq("id", id));
   S.cocktails = S.cocktails.filter(c => c.id !== id); for (const k in S.live) if (liveSplit(k)[0] === "k" + id) delete S.live[k];
 }
-async function actSetPrices(list) { // [{kind, o, price}]
+async function actSetPrices(list) { needEdit(); // [{kind, o, price}]
   if (cloud()) for (const it of list)
     await q(it.kind === "f" ? sb.from("produit_formats").update({prix_ttc: it.price}).eq("id", it.o.id)
       : sb.from(it.kind === "p" ? "produits" : "cocktails").update({prix_vente_ttc: it.price, modifie_le: new Date().toISOString()}).eq("id", it.o.id));
   list.forEach(it => { it.o.s = it.price; if (it.o.fm0) it.o.fm0.s = it.price; });
 }
-async function actSetCode(id, code) {
+async function actSetCode(id, code) { needEdit();
   if (cloud()) await q(sb.from("produits").update({code_barre: code, modifie_le: new Date().toISOString()}).eq("id", id));
   byId(id).code = code; save();
 }
@@ -425,7 +439,7 @@ function actStock(id, st) {
     catch (e) { toast(frErr(e)); if (isNetErr(e)) setSync("off"); }
   }, 600);
 }
-async function actInventory(counts, loss, details) {
+async function actInventory(counts, loss, details) { needEdit();
   if (cloud()) {
     for (const [id, st] of counts) await q(sb.from("produits").update({stock: Math.round(st * 1000) / 1000}).eq("id", id));
     await q(sb.from("inventaires").insert({etab_id: ETAB.id, fait_par: ME.id, perte_ventes_ht: Math.round(loss * 100) / 100, details}));
@@ -434,7 +448,7 @@ async function actInventory(counts, loss, details) {
   S.lastInv = {date: new Date().toISOString(), loss};
   try { await actReleve("inventaire"); } catch (e) {}
 }
-async function actImport(list, dateISO, ref, aliases) {
+async function actImport(list, dateISO, ref, aliases) { needEdit();
   const le = new Date(dateISO + "T23:00:00");
   let res;
   if (cloud()) {
@@ -461,7 +475,7 @@ function importEstimate(list) {
     ca += unit * x.q; ht += h * x.q; marg += (h - i.c.cost) * x.q; qty += x.q; });
   return {ca, ht, marg, qty};
 }
-async function actSaveCu(t, id, x) {
+async function actSaveCu(t, id, x) { needEdit();
   const list = cu()[t];
   if (cloud()) {
     const data = {...x}; delete data.id;
@@ -469,24 +483,25 @@ async function actSaveCu(t, id, x) {
     else { const r = await q(sb.from("cuisine").insert({etab_id: ETAB.id, type: t, data}).select("id").single()); list.unshift({...x, id: r.id}); }
   } else { if (id) Object.assign(list.find(o => o.id === id), x); else list.unshift({...x, id: "c" + t + Date.now()}); }
 }
-async function actDeleteCu(t, id) {
+async function actDeleteCu(t, id) { needEdit();
   if (cloud()) await q(sb.from("cuisine").delete().eq("id", id));
   const c = cu(); c[t] = c[t].filter(o => o.id !== id);
   [...c.r, ...c.d].forEach(o => o.lines = (o.lines || []).filter(l => !(l.t === t && l.id === id)));
 }
 async function actOpts(patch) {
+  if (Object.keys(patch).some(k => k !== "facturation")) needEdit();
   const o = {...(S.opts || {}), ...patch};
   if (cloud()) await q(sb.from("etablissements").update({options: o}).eq("id", ETAB.id));
   S.opts = o;
 }
-async function actResto(r) {
+async function actResto(r) { needEdit();
   await actOpts({resto: r});
   S.resto = r;
   if (r && r.on && MODE === "demo" && !(cu().i.length || cu().d.length)) S.cu = seedCuisine();
 }
 /* Fournisseurs, commandes, relevés de stock */
 const stockValue = () => Math.round(S.products.reduce((t, p) => t + p.b * p.st, 0) * 100) / 100;
-async function actSaveFour(id, x) {
+async function actSaveFour(id, x) { needEdit();
   const L = S.fours = S.fours || [];
   if (cloud()) {
     const data = {...x}; delete data.id;
@@ -496,16 +511,16 @@ async function actSaveFour(id, x) {
   const o = L.find(f => f.id === id); if (o) Object.assign(o, x); else L.unshift({...x, id});
   return id;
 }
-async function actDeleteFour(id) {
+async function actDeleteFour(id) { needEdit();
   if (cloud()) await q(sb.from("fournisseurs").delete().eq("id", id));
   S.fours = (S.fours || []).filter(f => f.id !== id);
   S.products.forEach(p => { if (p.f === id) p.f = ""; }); cu().i.forEach(i => { if (i.f === id) i.f = ""; });
 }
-async function actLinkProduct(pid, fid) {
+async function actLinkProduct(pid, fid) { needEdit();
   const p = byId(pid); if (!p) return; p.f = fid || "";
   if (cloud()) await q(sb.from("produits").update({fournisseur_id: fid || null}).eq("id", pid));
 }
-async function actSaveCmd(id, x) {
+async function actSaveCmd(id, x) { needEdit();
   const L = S.cmds = S.cmds || [], total = Math.round(cmdTotal(x) * 100) / 100;
   if (cloud()) {
     const data = {f: x.f, lignes: x.lignes, note: x.note || ""}, row = {statut: x.statut, total_ht: total, recue_le: x.recue_le || null, data, modifie_le: new Date().toISOString()};
@@ -516,31 +531,31 @@ async function actSaveCmd(id, x) {
   if (o) Object.assign(o, v); else L.unshift(v);
   return id;
 }
-async function actDeleteCmd(id) {
+async function actDeleteCmd(id) { needEdit();
   if (cloud()) await q(sb.from("commandes").delete().eq("id", id));
   S.cmds = (S.cmds || []).filter(c => c.id !== id);
 }
-async function actReleve(origine = "auto") {
+async function actReleve(origine = "auto") { needEdit();
   const v = stockValue(), le = new Date().toISOString();
   if (cloud()) await q(sb.from("stock_releves").insert({etab_id: ETAB.id, valeur_ht: v, origine}));
   (S.releves = S.releves || []).push({le, v, o: origine});
 }
-async function actPerte(x) { // {type, n, q, u, c, stock:{id, st}}
+async function actPerte(x) { needEdit(); // {type, n, q, u, c, stock:{id, st}}
   let id = "d" + Date.now();
   if (cloud()) id = (await q(sb.from("pertes").insert({etab_id: ETAB.id, type: x.type, libelle: x.n.slice(0, 120), qte: x.q, unite: x.u, cout_ht: Math.round(x.c * 100) / 100, par: ME.id}).select("id").single())).id;
   (S.pertes = S.pertes || []).unshift({id, le: new Date().toISOString(), type: x.type, n: x.n, q: x.q, u: x.u, c: x.c});
   if (x.stock) actStock(x.stock.id, x.stock.st);
 }
-async function actDeletePerte(id) {
+async function actDeletePerte(id) { needEdit();
   if (cloud()) await q(sb.from("pertes").delete().eq("id", id));
   S.pertes = (S.pertes || []).filter(x => x.id !== id);
 }
-async function actCharges(c) {
+async function actCharges(c) { needEdit();
   if (cloud()) await q(c ? sb.from("etab_charges").upsert({etab_id: ETAB.id, data: c, maj: new Date().toISOString()})
                          : sb.from("etab_charges").delete().eq("etab_id", ETAB.id));
   S.ch = c;
 }
-async function actSettings(x) {
+async function actSettings(x) { needEdit();
   if (cloud()) {
     await q(sb.from("etablissements").update({nom: x.bar || ETAB.nom, objectif_spiritueux: x.target, objectif_bouteilles: x.target2, volume_mois: x.vol}).eq("id", ETAB.id));
     ETAB.nom = x.bar || ETAB.nom; lsSet(EKEY, ETAB);
@@ -593,6 +608,15 @@ function liveTotals() {
   }
   return {ca, ht, marg, qty, pertes, loss};
 }
+function renderAccBan() {
+  const el = $("accBan"); if (!el) return; const A = ACC(); let h = "";
+  if (A.etat === "lecture") h = `<div class="accban lock"><div><b>Votre essai gratuit est terminé.</b><span>Vos données sont gardées, mais plus rien ne peut être modifié ni encaissé dans le mode Service.</span></div><button class="mini" data-abo>S'abonner</button></div>`;
+  else if (A.etat === "essai" && A.fin_essai) { const d = daysLeft(A.fin_essai);
+    h = `<div class="accban"><div><b>Essai gratuit : ${d > 1 ? `encore ${d} jours` : d === 1 ? "dernier jour" : "se termine aujourd'hui"}</b><span>Tout est ouvert jusqu'au ${new Date(A.fin_essai + "T12:00:00").toLocaleDateString("fr-FR", {day: "numeric", month: "long"})}. Abonnez-vous pour continuer ensuite.</span></div><button class="mini" data-abo>Voir les offres</button></div>`; }
+  else if (A.etat === "abonne" && A.statut === "impaye" && A.paye_jusqu) { const lim = new Date(A.paye_jusqu + "T12:00:00"); lim.setDate(lim.getDate() + 15);
+    h = `<div class="accban lock"><div><b>Paiement refusé</b><span>Mettez à jour votre carte avant le ${lim.toLocaleDateString("fr-FR", {day: "numeric", month: "long"})} pour garder l'accès.</span></div><button class="mini" data-abo>Régulariser</button></div>`; }
+  el.innerHTML = h; el.hidden = !h; const b = el.querySelector("[data-abo]"); if (b) b.onclick = aboSheet;
+}
 function renderHome() {
   const h = new Date().getHours();
   $("hello").textContent = (h < 5 || h >= 18 ? "Bonsoir" : "Bonjour") + (S.bar ? ", " + S.bar : "");
@@ -613,6 +637,7 @@ function renderHome() {
     ? `<div class="tonight"><div><span class="live">Service en cours</span><div class="big h">${eur(t.marg)}</div><div class="meta">de marge · ${t.qty} verre${t.qty > 1 ? "s" : ""} · ${eur(t.ca)} TTC</div></div><button class="mini" data-go2>Continuer</button></div>`
     : `<div class="tonight"><div><div class="name">Prêt pour le service ?</div><div class="meta" style="white-space:normal">Suivez la marge du soir en direct, verre par verre, ou <a class="link" data-imp style="padding:0;font-size:12px">importez le fichier de votre caisse</a>.</div></div><button class="mini" data-go2 style="flex:none">Démarrer</button></div>`;
   $("tonight").querySelector("[data-go2]").onclick = () => go("service");
+  renderAccBan();
   const im = $("tonight").querySelector("[data-imp]"); if (im) im.onclick = importSheet;
 
   renderCharges(d); renderPertes();
@@ -725,6 +750,7 @@ function renderService() {
   $("tiles").querySelectorAll(".tile").forEach(el => el.onclick = e => tap(el.dataset.k, e.target.dataset.m ? -1 : 1));
 }
 function tap(k, dir) {
+  if (!canEdit()) return lockSheet();
   const z = S.zone || "comptoir", lk = k + "@" + z;
   if (dir < 0 && !S.live[lk]) { if (liveTotal(k)) toast(`Rien à retirer en « ${zoneLabel(z)} »`); return; }
   S.live[lk] = (S.live[lk] || 0) + dir; if (!S.live[lk]) delete S.live[lk];
@@ -1310,6 +1336,9 @@ function platSheet(id) {
 }
 const METIERS = [["bar","Bar"],["bar-resto","Bar-restaurant"],["resto","Restaurant"],["fastfood","Restauration rapide"],["traiteur","Traiteur"]];
 function restoSheet() {
+  if (!restoAllowed()) return openSheet(`<h2 class="h">Option Restauration</h2><div class="sub">Fiches plats, préparations, coût de l'assiette et allergènes, dans la même app que votre bar.</div>
+    <div class="card"><div class="name">+ 20 € HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
+    <button class="btn" id="roAbo">Ajouter l'option à mon abonnement</button>`, () => { $("roAbo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
   const r = Object.assign({on: false, metier: "bar-resto", target: 70}, S.resto || {});
   openSheet(`<h2 class="h">Option Restauration</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
     <div class="field"><label for="roM">Votre activité</label><select id="roM">${opts(METIERS.filter(m => m[0] !== "bar"), r.metier)}</select></div>
@@ -1632,7 +1661,7 @@ async function aboCall(body) {
   if (data && data.error) throw new Error(data.error);
   return data;
 }
-async function aboRefresh() { if (!cloud()) return; try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", ETAB.id).maybeSingle()); save(); } catch (e) {} }
+async function aboRefresh() { if (!cloud()) return; accRefresh(); try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", ETAB.id).maybeSingle()); save(); } catch (e) {} }
 function aboSheet() {
   if (MODE !== "cloud") return toast("Créez votre compte pour vous abonner");
   const a = S.abo || {statut: "aucun"}, actif = a.statut === "actif", st = ABO_ST[a.statut] || ABO_ST.aucun;

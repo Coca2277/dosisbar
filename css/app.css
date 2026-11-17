@@ -344,3 +344,8 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .abo .p{font-weight:800;font-size:17px;text-align:right;font-variant-numeric:tabular-nums}
 .abo .p small{font-family:Figtree,sans-serif;font-size:11px;font-weight:500;color:var(--mut)}
 .abo .d{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.4}
+
+/* Bandeau d'accès (essai, lecture seule, paiement refusé) */
+.accban{display:flex;align-items:center;gap:12px;padding:14px 16px;margin:0 0 12px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.accban>div{flex:1;min-width:0}.accban b{display:block;font-size:14px}.accban span{display:block;font-size:12.5px;line-height:1.45;color:var(--mut);margin-top:2px}
+.accban .mini{flex:none}.accban.lock{border-color:color-mix(in srgb,var(--bad) 55%,transparent);background:color-mix(in srgb,var(--bad) 9%,var(--card))}
