@@ -1647,6 +1647,7 @@ function aboSheet() {
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
     <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Option Restauration</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
     <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
+    ${actif ? "" : `<label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45;margin:4px 0 12px"><input type="checkbox" id="abCgv" style="margin-top:1px;flex:none"> <span>J'accepte les <a href="cgv.html" target="_blank" style="color:var(--amber2)">conditions générales de vente</a> : abonnement mensuel sans engagement, mois commencé non remboursé.</span></label>`}
     <button class="btn" id="abGo"></button>
     ${actif || a.statut === "impaye" ? `<div class="gap"></div><button class="btn danger" id="abStop">Résilier l'abonnement</button>` : ""}
     <p class="tip">Le paiement se fait sur la page sécurisée de Mollie : Dosis Bar ne voit jamais vos coordonnées bancaires.</p>`, () => {
@@ -1659,6 +1660,7 @@ function aboSheet() {
     document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });
     $("abResto").onchange = upd; upd();
     $("abGo").onclick = async () => { if (!navigator.onLine) return toast("Connexion internet nécessaire");
+      if (!actif && !$("abCgv").checked) { toast("Acceptez d'abord les conditions générales de vente"); return $("abCgv").focus(); }
       if (!actif && f === "pilote" && !$("abCode").value.trim()) { toast("Entrez votre code pilote"); return $("abCode").focus(); }
       $("abGo").classList.add("busy");
       try {
@@ -1829,7 +1831,7 @@ function settingsSheet() {
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
     <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>
     <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>
-    <button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
     armAvis();
     $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sAb").onclick = aboSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
@@ -1872,7 +1874,7 @@ function accountSheet() {
   openSheet(`<h2 class="h">Mon compte</h2><div class="sub">${esc(ME.email)}</div>
     <div class="card list"><div class="row"><div class="grow"><div class="name">${esc(ETAB.nom)}</div><div class="meta">Vous êtes barman : mode Service uniquement</div></div></div></div>
     <button class="btn ghost" id="swEtab">Changer d'établissement ou rejoindre</button><div class="gap"></div>
-    <button class="btn danger" id="logout">Se déconnecter</button>${avisBtns()}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`}`, () => {
+    <button class="btn danger" id="logout">Se déconnecter</button>${avisBtns()}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
     armAvis();
     $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); }; $("logout").onclick = logout; });
 }
@@ -1969,7 +1971,7 @@ function showAuth(screen, msg) {
       <form id="aJoin"><div class="field"><label for="aCode">Code à 6 caractères</label><input id="aCode" required maxlength="6" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:.2em;text-align:center"></div>
       <div class="err" id="aErr2" role="alert"></div><button class="btn ghost" type="submit">Rejoindre</button></form></div>
     <div class="center"><button class="link" id="aOut">Se déconnecter</button></div>`;
-  $("authBody").innerHTML = html + `<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a></div>`; A.classList.add("on"); A.scrollTop = 0;
+  $("authBody").innerHTML = html + `<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`; A.classList.add("on"); A.scrollTop = 0;
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on("aSignup", () => showAuth("signup")); on("aLogin", () => showAuth("login")); on("aForgot", () => showAuth("forgot"));
   on("aDemo", () => { lsSet(MKEY, "demo"); hideAuth(); startDemo(); });
