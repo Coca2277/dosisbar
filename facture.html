@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Facture — Dosis Bar</title>
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="stylesheet" href="css/doc.css">
+</head>
+<body>
+<div class="top"><a class="logo" href="./">Dosis <span>Bar</span></a><a class="back" href="app.html">Ouvrir l'app</a></div>
+<h1>Facture</h1>
+<p id="msg">Chargement de la facture…</p>
+<script src="js/vendor/supabase.js"></script>
+<script src="js/config.js"></script>
+<script>
+"use strict";
+(async () => {
+  const msg = t => { document.getElementById("msg").innerHTML = t; };
+  const n = new URLSearchParams(location.search).get("n") || "";
+  if (!/^F\d{4}-\d{4,}$/.test(n)) return msg("Numéro de facture invalide.");
+  const C = window.DOSIS_CONFIG || {};
+  const sb = window.supabase.createClient(C.supabaseUrl, C.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true } });
+  const { data: s } = await sb.auth.getSession();
+  if (!s.session) return msg('Connectez-vous d\'abord dans <a href="app.html">l\'application Dosis Bar</a> sur cet appareil, puis rouvrez ce lien.');
+  const { data, error } = await sb.from("factures").select("html").eq("numero", n).maybeSingle();
+  if (error) return msg("Impossible de charger la facture. Vérifiez votre connexion et réessayez.");
+  if (!data) return msg("Facture introuvable, ou elle ne concerne pas un établissement dont vous êtes le patron.");
+  const bar = `<div class="noprint" style="max-width:720px;margin:0 auto;padding:14px 16px;display:flex;gap:10px;justify-content:space-between;font-family:Helvetica,Arial,sans-serif">
+    <a href="app.html" style="color:#1d1916">← Retour à l'app</a>
+    <button onclick="print()" style="font:inherit;font-weight:700;background:#1d1916;color:#fff;border:0;border-radius:10px;padding:10px 16px;cursor:pointer">Imprimer ou enregistrer en PDF</button></div>
+    <style>@media print{.noprint{display:none!important}body{background:#fff!important}}</style>`;
+  const html = data.html.replace(/(<body[^>]*>)/, "$1" + bar);
+  document.open(); document.write(html); document.close();
+})();
+</script>
+</body>
+</html>
