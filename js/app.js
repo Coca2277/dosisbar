@@ -2161,7 +2161,7 @@ function confirmLeave() { if (leaveArmed) return true; leaveArmed = true; setTim
 function startDemo(quiet) {
   MODE = "demo"; ETAB = null; S = loadDemo(); liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir"; setSync("ok"); go("home");
   if (!quiet && !S.bar && !S.welcomed) { S.welcomed = true; save();
-    openSheet(`<div style="text-align:center;padding:6px 0 8px"><img src="icons/logo-bar.svg" width="52" height="60" alt=""></div><h2 class="h" style="text-align:center">Bienvenue sur Dosis</h2>
+    openSheet(`<div style="text-align:center;padding:6px 0 8px"><img src="icons/logo-bar.svg" width="52" height="60" alt=""></div><h2 class="h" style="text-align:center">Bienvenue sur Dosis Bar</h2>
     <div class="sub" style="text-align:center">Votre carte est déjà remplie avec des exemples. Comment s'appelle votre établissement ?</div>
     <div class="field"><input id="wBar" placeholder="Ex : Le Comptoir" style="text-align:center" aria-label="Nom de l'établissement" maxlength="80"></div>
     <button class="btn" id="wGo">C'est parti</button><div class="gap"></div><button class="btn ghost" id="wSkip">Plus tard</button>`, () => {
