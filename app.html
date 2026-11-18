@@ -37,12 +37,16 @@
   <div class="phone">
     <header>
       <div class="logo h"><img src="icons/logo-bar.svg" width="20" height="23" alt="">Dosis <span>Bar</span></div>
-      <div class="hdr-r"><span class="sync" id="sync" hidden>Synchronisé</span><button class="iconbtn" id="setBtn" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button></div>
+      <div class="dtabs dk" role="navigation" aria-label="Navigation">
+        <button data-v="home">Accueil</button><button data-v="menu">Bar</button><button data-v="cuisine"><img src="icons/logo-resto.svg" width="11" height="13" alt="">Resto</button><button data-v="stock">Stock</button><button data-v="calc">Calculs</button>
+      </div>
+      <div class="hdr-r"><button class="dlink dk" id="dBilan">Bilan du mois</button><button class="dsvc dk" id="dSvc">Démarrer le service</button><span class="sync" id="sync" hidden>Synchronisé</span><button class="iconbtn" id="setBtn" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button></div>
     </header>
 
     <main id="main">
       <!-- ACCUEIL -->
       <section class="view on" id="v-home">
+        <div id="dHome" class="dk"></div>
         <h2 class="h" id="hello">Bonsoir</h2>
         <div class="sub" id="today"></div>
         <div id="accBan" hidden></div>

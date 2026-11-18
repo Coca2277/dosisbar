@@ -349,3 +349,60 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
 .accban{display:flex;align-items:center;gap:12px;padding:14px 16px;margin:0 0 12px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
 .accban>div{flex:1;min-width:0}.accban b{display:block;font-size:14px}.accban span{display:block;font-size:12.5px;line-height:1.45;color:var(--mut);margin-top:2px}
 .accban .mini{flex:none}.accban.lock{border-color:color-mix(in srgb,var(--bad) 55%,transparent);background:color-mix(in srgb,var(--bad) 9%,var(--card))}
+
+/* ---------- Version ordinateur (écran large) : plein écran, onglets en haut, accueil « mot du jour + deux comptoirs » ---------- */
+.dk{display:none}
+@media (min-width:1100px){
+  .stage{display:block;padding:0}
+  .side{display:none}
+  .phone{width:100%;height:100vh;border:0;border-radius:0;box-shadow:none}
+  .phone::before{opacity:.25}
+  header{padding:14px 32px;border-bottom:1px solid var(--line);gap:28px;justify-content:flex-start}
+  header .logo{font-size:18px}
+  .dk{display:initial}
+  .dtabs{display:flex;gap:4px}
+  .dtabs button{background:none;border:0;color:var(--mut);font-weight:500;font-size:14px;padding:8px 12px;border-radius:10px;display:flex;align-items:center;gap:6px;transition:color .2s,background .2s}
+  .dtabs button:hover{color:var(--txt);background:var(--card)}
+  .dtabs button.on{color:var(--txt);background:var(--card2)}
+  .dtabs button.opt{color:var(--dim)}
+  .dtabs button.opt::after{content:"Option";font-size:10.5px;font-weight:600;border:1px solid var(--line2);border-radius:99px;padding:1px 7px;margin-left:2px}
+  .hdr-r{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .dlink{background:none;border:0;color:var(--mut);font-weight:500;font-size:14px;padding:8px 10px;border-radius:10px}
+  .dlink:hover{color:var(--txt);background:var(--card)}
+  .dsvc{background:var(--amber);color:#1a1208;border:0;border-radius:99px;padding:9px 18px;font-weight:700;font-size:14px}
+  .dsvc:hover{background:var(--amber2)}
+  nav{display:none}
+  .fab{bottom:32px;right:32px}
+  main{padding:28px 32px 60px}
+  .view{max-width:1080px;margin:0 auto}
+  #v-home>:not(#dHome){display:none!important}
+  #dHome{display:block}
+  .dmot{max-width:760px;margin:18px 0 34px}
+  .dmot p{font-size:32px;line-height:1.25;font-weight:600}
+  .dmot em{font-style:normal;color:var(--amber)}
+  .dmot em.neg{color:var(--bad)}
+  .dmot .mut{margin-top:10px;font-size:15px;line-height:1.6}
+  .dmot .link{font:inherit;color:var(--amber2);background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:3px}
+  .dcomp{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:20px;overflow:hidden}
+  .dc{padding:26px 28px;display:flex;flex-direction:column;min-height:250px}
+  .dc+.dc{border-left:1px solid var(--line)}
+  .dc.dopt{background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .dch{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+  .dtag{margin-left:auto;font-size:11px;font-weight:600;color:var(--mut);border:1px solid var(--line2);border-radius:99px;padding:2px 9px}
+  .dbig{font-size:46px;font-weight:600;margin:16px 0 2px;letter-spacing:-.02em}
+  .dask{font-size:22px;font-weight:600;margin:18px 0 6px}
+  .dc .mut{line-height:1.5}
+  .dfoot{margin-top:auto;padding-top:22px;display:flex;gap:10px}
+  .dghost{background:none;border:1px solid var(--line2);color:var(--txt);border-radius:99px;padding:9px 18px;font-weight:600;font-size:14px}
+  .dghost:hover{background:var(--card)}
+  .dtodo{margin-top:32px;max-width:760px}
+  .dtodo>.mut{margin-bottom:6px}
+  .drow{display:flex;justify-content:space-between;gap:16px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:var(--txt);padding:14px 2px;font-size:15px}
+  button.drow:hover span:first-child{color:var(--amber2)}
+  .drow.none{color:var(--mut)}
+  .drow .pos{color:var(--ok)} .drow .warn{color:var(--amber)}
+  .sheet{left:auto;top:0;bottom:0;width:480px;max-height:none;border-top:0;border-left:1px solid var(--line);border-radius:0;padding:22px 26px 30px;transform:translateX(102%)}
+  .sheet.on{transform:none}
+  .sheet .grab{display:none}
+  .tiles{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+}

@@ -566,11 +566,16 @@ async function actSettings(x) { needEdit();
 /* ================= Navigation ================= */
 let view = "home";
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => go(b.dataset.v));
+document.querySelectorAll(".dtabs button").forEach(b => b.onclick = () => b.dataset.v === "cuisine" && !restoOn() ? restoSheet() : go(b.dataset.v));
+$("dSvc").onclick = () => go("service"); $("dBilan").onclick = () => bilanSheet();
 document.querySelectorAll("[data-go]").forEach(a => a.onclick = () => go(a.dataset.go));
 function navSync() {
   const cur = view === "menu" && menuKind === "c" ? "cuisine" : view;
   document.querySelectorAll("nav button").forEach(b => { b.classList.toggle("on", b.dataset.v === cur);
     b.hidden = (isBarman() && b.dataset.v !== "service") || (b.dataset.v === "cuisine" && !restoOn()); });
+  document.querySelectorAll(".dtabs button").forEach(b => { b.classList.toggle("on", b.dataset.v === cur);
+    b.classList.toggle("opt", b.dataset.v === "cuisine" && !restoOn()); b.hidden = isBarman(); });
+  document.querySelectorAll(".dk.dsvc,.dk.dlink").forEach(b => b.hidden = isBarman() || (b.id === "dSvc" && view === "service"));
   const t = document.querySelector("#v-menu > h2"), st = document.querySelector("#v-menu > .sub");
   if (t) t.innerHTML = menuKind === "c" ? `<img src="icons/logo-resto.svg" width="24" height="28" alt="" style="vertical-align:-4px;margin-right:8px">Ma cuisine` : "Ma carte";
   if (st) st.textContent = menuKind === "c" ? "Plats, préparations et ingrédients" : "Touchez un produit pour le modifier";
@@ -617,6 +622,53 @@ function renderAccBan() {
     h = `<div class="accban lock"><div><b>Paiement refusé</b><span>Mettez à jour votre carte avant le ${lim.toLocaleDateString("fr-FR", {day: "numeric", month: "long"})} pour garder l'accès.</span></div><button class="mini" data-abo>Régulariser</button></div>`; }
   el.innerHTML = h; el.hidden = !h; const b = el.querySelector("[data-abo]"); if (b) b.onclick = aboSheet;
 }
+/* ================= Accueil ordinateur : le mot du jour + deux comptoirs ================= */
+const isDesk = () => matchMedia("(min-width:1100px)").matches;
+function oppSheet() {
+  const o = opportunities();
+  openSheet(`<h2 class="h">Prix à corriger</h2><div class="sub">Les boissons sous votre objectif de marge, avec le prix conseillé et ce qu'il rapporterait chaque mois.</div>
+    ${o.length ? o.map(i => `<div class="row"><div class="grow"><div class="name">${esc(i.o.n)}</div><div class="meta">${eur(i.o.s)} → <b style="color:var(--txt)">${eur(i.np)}</b> · marge ${pct(i.c.rate)} → ${i.t} %</div></div>
+      <div class="right"><div class="gain">+${eur(i.month, 0)}</div><button class="mini" data-k="${i.key}" data-np="${i.np}">Appliquer</button></div></div>`).join("") : `<div class="empty">Tous vos prix atteignent vos objectifs.</div>`}`, () => {
+    $("sBody").querySelectorAll("[data-k]").forEach(b => b.onclick = async () => { const it = allItems().find(x => x.key === b.dataset.k); b.classList.add("busy");
+      if (await act(() => actSetPrices([{kind: it.kind, o: it.o, price: +b.dataset.np}]), `${it.o.n} : ${eur(+b.dataset.np)} ✓`)) oppSheet(); });
+  });
+}
+function renderDHome() {
+  const el = $("dHome"); if (!el || !isDesk()) return;
+  const d = scoreData(), o = opportunities(), gain = o.reduce((s, i) => s + i.month, 0), low = S.products.filter(p => p.st < p.m);
+  const hr = new Date().getHours(), hi = hr < 5 || hr >= 18 ? "Bonsoir" : "Bonjour", nm = esc(S.bar || (ETAB && ETAB.nom) || "votre établissement");
+  const ro = restoOn(), plats = ro ? cu().d.map(x => ({x, k: platCalc(x)})).filter(p => p.k.ht > 0) : [], T = cuTarget();
+  const pAvg = plats.length ? plats.reduce((s, p) => s + p.k.rate, 0) / plats.length : NaN, pCost = plats.length ? plats.reduce((s, p) => s + p.k.cost / p.k.ht * 100, 0) / plats.length : NaN;
+  const pLow = plats.filter(p => p.k.rate < T).sort((a, b) => a.k.rate - b.k.rate);
+  let msg, sub = "";
+  if (d.empty) { msg = `${hi}. Ajoutez votre carte pour voir ce que rapporte ${nm}.`; sub = `Commencez par l'onglet Bar : chaque boisson ajoutée calcule sa marge.`; }
+  else if (chOn()) { const tot = chTotal(), vol = num(S.ch.v), res = vol * d.avgEur - tot, need = d.avgEur > 0 ? Math.ceil(tot / d.avgEur) : 0;
+    msg = res >= 0 ? `${hi}. Ce mois, ${nm} devrait gagner <em>${eur(res, 0)}</em>.` : `${hi}. Ce mois, il manque <em class="neg">${eur(-res, 0)}</em> pour couvrir vos charges.`;
+    sub = `${eur(tot, 0)} de charges fixes, couvertes à partir de ${need.toLocaleString("fr-FR")} ventes par mois. Vous en faites environ ${vol.toLocaleString("fr-FR")}.`; }
+  else { msg = `${hi}. Vos boissons vous rapportent en moyenne <em>${pct(d.avgRate)}</em> de marge.`; sub = `<button class="link" data-a="ch">Ajoutez vos charges fixes</button> pour connaître votre vrai bénéfice du mois.`; }
+  const todo = [];
+  if (o.length) todo.push([`Corriger ${o.length} prix de boisson${o.length > 1 ? "s" : ""}`, `<span class="pos">+${eur(gain, 0)} / mois</span>`, "opp"]);
+  if (pLow.length) todo.push([pLow.length === 1 ? `Revoir le prix : ${esc(pLow[0].x.n || "plat")}` : `Revoir le prix de ${pLow.length} plats`, `<span class="warn">marge ${pct(pLow[0].k.rate)}</span>`, "cu"]);
+  if (low.length) todo.push([`Commander ${low.length} produit${low.length > 1 ? "s" : ""}`, esc(low.slice(0, 2).map(p => p.n).join(", ")) + (low.length > 2 ? "…" : ""), "stock"]);
+  const D = `<img src="icons/logo-bar.svg" width="15" height="17" alt="">`, R = `<img src="icons/logo-resto.svg" width="15" height="17" alt="">`;
+  el.innerHTML = `<div class="dmot"><p class="h">${msg}</p><div class="mut">${sub}</div></div>
+    <div class="dcomp">
+      <section class="dc"><div class="dch">${D}Bar</div>
+        <div class="dbig h">${d.empty ? "—" : pct(d.avgRate)}</div><div class="mut">${d.empty ? "Aucune boisson pour l'instant" : `de marge moyenne · ${eur(d.avgEur)} HT par verre`}</div>
+        <div class="dfoot"><button class="dsvc" data-a="svc">Démarrer le service</button><button class="dghost" data-a="menu">Ma carte</button></div></section>
+      ${ro ? `<section class="dc"><div class="dch">${R}Resto</div>
+        <div class="dbig h">${plats.length ? pct(pAvg) : "—"}</div><div class="mut">${plats.length ? `de marge moyenne · coût matière ${pct(pCost)}` : "Aucun plat pour l'instant"}</div>
+        <div class="dfoot"><button class="dghost" data-a="cu">Mes plats</button></div></section>`
+      : `<section class="dc dopt"><div class="dch">${R}Resto<span class="dtag">Option</span></div>
+        <p class="h dask">Vous servez aussi à manger ?</p><div class="mut">Le coût de chaque plat, la marge de votre cuisine et les allergènes, dans la même app.</div>
+        <div class="dfoot"><button class="dghost" data-a="resto">Découvrir Dosis Resto</button></div></section>`}
+    </div>
+    <div class="dtodo"><div class="mut">${todo.length ? "Trois choses pour gagner plus" : "À faire"}</div>
+      ${todo.length ? todo.slice(0, 3).map(t => `<button class="drow" data-a="${t[2]}"><span>${t[0]}</span><span class="mut">${t[1]}</span></button>`).join("") : `<div class="drow none">Rien à faire : tout est en ordre.</div>`}</div>`;
+  const A = {ch: chargesSheet, svc: () => go("service"), menu: () => go("menu"), cu: () => go("cuisine"), resto: restoSheet, opp: oppSheet, stock: () => go("stock")};
+  el.querySelectorAll("[data-a]").forEach(b => b.onclick = () => A[b.dataset.a]());
+}
+addEventListener("resize", () => { if (view === "home") renderDHome(); });
 function renderHome() {
   const h = new Date().getHours();
   $("hello").textContent = (h < 5 || h >= 18 ? "Bonsoir" : "Bonjour") + (S.bar ? ", " + S.bar : "");
@@ -637,7 +689,7 @@ function renderHome() {
     ? `<div class="tonight"><div><span class="live">Service en cours</span><div class="big h">${eur(t.marg)}</div><div class="meta">de marge · ${t.qty} verre${t.qty > 1 ? "s" : ""} · ${eur(t.ca)} TTC</div></div><button class="mini" data-go2>Continuer</button></div>`
     : `<div class="tonight"><div><div class="name">Prêt pour le service ?</div><div class="meta" style="white-space:normal">Suivez la marge du soir en direct, verre par verre, ou <a class="link" data-imp style="padding:0;font-size:12px">importez le fichier de votre caisse</a>.</div></div><button class="mini" data-go2 style="flex:none">Démarrer</button></div>`;
   $("tonight").querySelector("[data-go2]").onclick = () => go("service");
-  renderAccBan();
+  renderAccBan(); renderDHome();
   const im = $("tonight").querySelector("[data-imp]"); if (im) im.onclick = importSheet;
 
   renderCharges(d); renderPertes();
@@ -2109,7 +2161,7 @@ function confirmLeave() { if (leaveArmed) return true; leaveArmed = true; setTim
 function startDemo(quiet) {
   MODE = "demo"; ETAB = null; S = loadDemo(); liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir"; setSync("ok"); go("home");
   if (!quiet && !S.bar && !S.welcomed) { S.welcomed = true; save();
-    openSheet(`<div style="text-align:center;padding:6px 0 4px">${glass(.62, {w:64, wave:true})}</div><h2 class="h" style="text-align:center">Bienvenue sur Dosis Bar</h2>
+    openSheet(`<div style="text-align:center;padding:6px 0 8px"><img src="icons/logo-bar.svg" width="52" height="60" alt=""></div><h2 class="h" style="text-align:center">Bienvenue sur Dosis</h2>
     <div class="sub" style="text-align:center">Votre carte est déjà remplie avec des exemples. Comment s'appelle votre établissement ?</div>
     <div class="field"><input id="wBar" placeholder="Ex : Le Comptoir" style="text-align:center" aria-label="Nom de l'établissement" maxlength="80"></div>
     <button class="btn" id="wGo">C'est parti</button><div class="gap"></div><button class="btn ghost" id="wSkip">Plus tard</button>`, () => {
