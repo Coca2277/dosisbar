@@ -35,6 +35,11 @@ img{display:block;max-width:100%}
 .hero h1{font-size:clamp(40px,5.2vw,70px);line-height:1;font-weight:800;max-width:14ch}
 .hero .lead{font-size:clamp(18px,1.6vw,21px);color:#E6DACB;max-width:34ch;margin:22px 0 30px}
 .verre{background:linear-gradient(180deg,var(--acajou),#211710);border:1px solid var(--ligne);border-radius:28px;padding:26px;display:grid;grid-template-columns:150px 1fr;gap:24px;align-items:center;position:relative}
+.verre .mode{grid-column:1/-1;display:inline-flex;justify-self:start;gap:4px;padding:4px;border:1px solid var(--ligne);border-radius:99px;background:rgba(20,17,15,.4)}
+.verre .mode button{font:inherit;font-size:14px;font-weight:700;color:var(--mut);background:none;border:0;border-radius:99px;padding:7px 16px;cursor:pointer;transition:background .2s,color .2s}
+.verre .mode button.on{background:var(--ambre);color:#1a1208}
+.verre .mode button:focus-visible{outline:2px solid var(--miel);outline-offset:2px}
+.champ[hidden]{display:none}
 .verre .glass{width:150px;height:188px}
 .verre .glass svg{width:100%;height:100%;overflow:visible}
 .liq{transition:transform 1s var(--ease)}

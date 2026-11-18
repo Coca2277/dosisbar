@@ -61,17 +61,19 @@
         </div>
       </div>
 
-      <form class="verre" id="verre" aria-label="Calculer la marge d'un verre" onsubmit="return false">
+      <form class="verre" id="verre" aria-label="Calculer la marge d'un verre ou d'une bouteille" onsubmit="return false">
+        <div class="mode" role="group" aria-label="Vendu"><button type="button" class="on" data-m="verre" aria-pressed="true">Au verre</button><button type="button" data-m="bouteille" aria-pressed="false">À la bouteille</button></div>
         <div class="glass" id="glass" aria-hidden="true"></div>
         <div aria-live="polite">
-          <div class="gain h" id="gain">4,85 €<small>gagnés par verre, hors taxes</small></div>
+          <div class="gain h" id="gain">4,85 €<small id="gainLbl">gagnés par verre, hors taxes</small></div>
           <div class="taux"><span class="pill ok" id="taux">81 % de marge</span><span class="pill" id="coef">coefficient × 5,2</span></div>
         </div>
         <div class="champs">
           <div class="champ"><label for="cBut">Bouteille HT</label><div class="in"><input id="cBut" inputmode="decimal" value="18"><span class="u">€</span></div></div>
-          <div class="champ"><label for="cCap">Contenance</label><div class="in"><select id="cCap"><option value="50">50 cl</option><option value="70" selected>70 cl</option><option value="100">1 litre</option></select></div></div>
-          <div class="champ"><label for="cDose">Dose servie</label><div class="in"><input id="cDose" inputmode="decimal" value="4"><span class="u">cl</span></div></div>
-          <div class="champ"><label for="cPrix">Verre TTC</label><div class="in"><input id="cPrix" inputmode="decimal" value="8"><span class="u">€</span></div></div>
+          <div class="champ sv"><label for="cCap">Contenance</label><div class="in"><select id="cCap"><option value="50">50 cl</option><option value="70" selected>70 cl</option><option value="100">1 litre</option></select></div></div>
+          <div class="champ sv"><label for="cDose">Dose servie</label><div class="in"><input id="cDose" inputmode="decimal" value="4"><span class="u">cl</span></div></div>
+          <div class="champ sv"><label for="cPrix">Verre TTC</label><div class="in"><input id="cPrix" inputmode="decimal" value="8"><span class="u">€</span></div></div>
+          <div class="champ sb" hidden><label for="cPrixB">Vendue TTC</label><div class="in"><input id="cPrixB" inputmode="decimal" value="60"><span class="u">€</span></div></div>
         </div>
         <p class="conseil" id="conseil"></p>
       </form>
@@ -256,24 +258,37 @@
     '<g clip-path="url(#hg)"><rect width="40" height="50" fill="rgba(244,237,228,.06)"/>' +
     '<g class="liq" id="liq"><path class="wave" fill="#E8A33D" d="M-40 0q5 -2.4 10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0t10 0V60H-40z"/></g></g>' +
     '<path d="' + GLASS + '" fill="none" stroke="rgba(244,237,228,.55)" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  var mode = "verre";
   function calc() {
+    var bt = mode === "bouteille";
     var b = num($("cBut").value), cap = num($("cCap").value), d = num($("cDose").value), ttc = num($("cPrix").value);
-    var ht = ttc / 1.2, cout = cap > 0 ? b / cap * d : 0, m = ht - cout, taux = ht > 0 ? m / ht * 100 : 0;
-    var ok = b > 0 && cap > 0 && d > 0 && ttc > 0;
+    var ht = ttc / 1.2, cout = cap > 0 ? b / cap * d : 0;
+    var htB = num($("cPrixB").value) / 1.2, okB = b > 0 && htB > 0;
+    var vHt = bt ? htB : ht, vCout = bt ? b : cout, m = vHt - vCout, taux = vHt > 0 ? m / vHt * 100 : 0, obj = bt ? 70 : 80;
+    var okV = b > 0 && cap > 0 && d > 0 && ttc > 0, ok = bt ? okB : okV;
     $("gain").firstChild.nodeValue = ok ? eur(m, 2) : "—";
+    $("gainLbl").textContent = bt ? "gagnés par bouteille, hors taxes" : "gagnés par verre, hors taxes";
     var t = $("taux"); t.textContent = ok ? Math.round(taux) + " % de marge" : "Remplissez les champs";
-    t.className = "pill " + (taux >= 80 ? "ok" : taux >= 70 ? "warn" : "bad");
-    $("coef").textContent = ok && cout > 0 ? "coefficient × " + (ht / cout).toFixed(1).replace(".", ",") : "";
+    t.className = "pill " + (taux >= obj ? "ok" : taux >= obj - 10 ? "warn" : "bad");
+    $("coef").textContent = ok && vCout > 0 ? "coefficient × " + (vHt / vCout).toFixed(1).replace(".", ",") : "";
     var lvl = Math.max(0, Math.min(1, taux / 100)), y = 46 - 41 * lvl;
     $("liq").style.transform = "translateY(" + y + "px)";
-    var conseil = Math.ceil(cout / 0.2 * 1.2 * 10 - 1e-9) / 10;
-    $("conseil").innerHTML = !ok ? "" : taux >= 80 ? "Belle marge. Dosis Bar la suit pour chaque produit de votre carte."
-      : "Pour atteindre 80 % de marge, ce verre devrait être vendu <b>" + eur(conseil, 2) + "</b>.";
+    var conseil = Math.ceil(vCout / (1 - obj / 100) * 1.2 * (bt ? 1 : 10) - 1e-9) / (bt ? 1 : 10);
+    $("conseil").innerHTML = !ok ? "" : taux >= obj ? "Belle marge. Dosis Bar la suit pour chaque produit de votre carte."
+      : "Pour atteindre " + obj + " % de marge, " + (bt ? "cette bouteille" : "ce verre") + " devrait être vendu" + (bt ? "e" : "") + " <b>" + eur(conseil, bt ? 0 : 2) + "</b>.";
     // un centilitre de trop par verre, 10 verres par soir, 6 soirs sur 7
     var verresPerdus = d > 0 ? (10 * 6 * 52) / d : 0;
-    $("perte").textContent = ok ? eur(Math.round(verresPerdus * ht), 0) : "—";
+    $("perte").textContent = okV ? eur(Math.round(verresPerdus * ht), 0) : "—";
   }
-  ["cBut", "cCap", "cDose", "cPrix"].forEach(function (id) { $(id).addEventListener("input", calc); $(id).addEventListener("change", calc); });
+  document.querySelectorAll(".mode button").forEach(function (btn) { btn.addEventListener("click", function () {
+    mode = btn.dataset.m;
+    document.querySelectorAll(".mode button").forEach(function (x) { x.classList.toggle("on", x === btn); x.setAttribute("aria-pressed", x === btn); });
+    document.querySelectorAll(".champ.sv").forEach(function (x) { x.hidden = mode === "bouteille"; });
+    document.querySelectorAll(".champ.sb").forEach(function (x) { x.hidden = mode !== "bouteille"; });
+    document.querySelector('label[for="cBut"]').textContent = mode === "bouteille" ? "Achetée HT" : "Bouteille HT";
+    calc();
+  }); });
+  ["cBut", "cCap", "cDose", "cPrix", "cPrixB"].forEach(function (id) { $(id).addEventListener("input", calc); $(id).addEventListener("change", calc); });
   calc();
   var top = $("top"); addEventListener("scroll", function () { top.classList.toggle("scrolled", scrollY > 8); }, {passive: true});
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
