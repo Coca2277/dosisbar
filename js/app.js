@@ -319,6 +319,7 @@ async function loadCloud() {
       S.releves = rr.map(x => ({le: x.le, v: +x.valeur_ht, o: x.origine}));
     } catch (x) { S.fours = S.fours || []; S.cmds = S.cmds || []; S.releves = S.releves || []; }
     try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", e).maybeSingle()); } catch (x) { S.abo = S.abo || null; }
+    try { S.caisse = await q(sb.from("caisse_connexions").select("fournisseur,nom_compte,derniere_synchro,erreur").eq("etab_id", e).maybeSingle()); } catch (x) { S.caisse = S.caisse || null; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
   }
@@ -980,14 +981,22 @@ const CAISSES = "SumUp, Flatpay, Zelty, Lightspeed, L'Addition, Square, Tiller, 
 function importSheet() {
   if (isBarman()) return;
   if (!allItems().length) return toast("Ajoutez d'abord vos produits à la carte");
-  openSheet(`<h2 class="h">Ventes de la caisse</h2><div class="sub">Importez le fichier des ventes de votre caisse : la marge de la soirée et le stock se calculent tout seuls.</div>
-    <label class="drop" id="impDrop"><input type="file" id="impFile" accept=".csv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv" hidden>
+  const yest = new Date(Date.now() - 864e5 + 6 * 36e5).toISOString().slice(0, 10), today0 = new Date().toISOString().slice(0, 10);
+  const conn = cloud() && S.caisse ? `<div class="card"><div class="name">${esc(CAISSE_NOMS[S.caisse.fournisseur] || "Caisse")} connectée ✓</div>
+      <div class="meta" style="white-space:normal;margin-top:4px">Les ventes arrivent directement de votre caisse, sans fichier.</div>
+      <div class="field" style="margin-top:10px"><label for="caDate">Journée</label><input id="caDate" type="date" value="${yest}" max="${today0}"></div>
+      <button class="btn" id="caFetch">Récupérer les ventes</button></div><div class="lbl" style="margin-top:4px"><span>Ou avec un fichier</span></div>`
+    : cloud() && !isBarman() ? `<button class="link" id="caLink" style="padding:0 0 12px">🔌 Connecter ma caisse pour ne plus importer de fichier</button>` : "";
+  openSheet(`<h2 class="h">Ventes de la caisse</h2><div class="sub">Importez les ventes de votre caisse : la marge de la soirée et le stock se calculent tout seuls.</div>
+    ${conn}<label class="drop" id="impDrop"><input type="file" id="impFile" accept=".csv,.txt,.xlsx,.xls,.xlsm,.ods,text/csv" hidden>
       <div class="e">📄</div><div class="name">Choisir le fichier</div><div class="meta" style="white-space:normal">CSV ou Excel · ${CAISSES}</div></label>
     <div class="card"><div class="name" style="font-size:14px">Où trouver ce fichier ?</div>
       <p class="tip" style="margin-top:6px">Dans l'espace en ligne de votre caisse : <b>Rapports</b> ou <b>Statistiques</b> → <b>Ventes par produit</b> (ou par article) → <b>Exporter</b> en CSV ou Excel, pour la journée voulue.</p></div>
     <div class="center"><button class="link" id="impDemo">Pas de caisse ? Essayer avec un fichier d'exemple</button></div>`, () => {
     $("impDemo").onclick = async () => { try { const r = await fetch("exemples/ventes-exemple.csv"); const b = await r.blob(); impRead(new File([b], "exemple-caisse.csv", {type: "text/csv"})); } catch (e) { toast("Exemple indisponible hors connexion"); } };
     $("impFile").onchange = e => { const f = e.target.files[0]; if (f) impRead(f); };
+    if ($("caFetch")) $("caFetch").onclick = caisseVentes;
+    if ($("caLink")) $("caLink").onclick = () => { closeSheet(); setTimeout(caisseSheet, 250); };
     const d = $("impDrop");
     d.ondragover = e => { e.preventDefault(); d.classList.add("over"); };
     d.ondragleave = () => d.classList.remove("over");
@@ -1026,23 +1035,24 @@ function impColumns(det, map, ref, fname) {
   });
 }
 function impMatch(det, map, ref, fname) {
-  const g = Import.group(det, map);
+  const g = det.pre || Import.group(det, map);
   if (!g.items.length) { toast("Aucune vente trouvée avec ces colonnes"); return impColumns(det, map, ref, fname); }
   const catalog = allItems().map(i => ({key: i.key, label: i.o.n}));
   const rows = Import.match(g.items, catalog, S.alias || {});
   const choices = [["", "— Relier à… —"], ...allItems().map(i => [i.key, (i.kind === "k" ? "🍹 " : "") + i.o.n]), ["ignore", "Ignorer (pas suivi dans Dosis Bar)"]];
   const today = new Date().toISOString().slice(0, 10);
   const badge = st => st === "ok" || st === "memo" ? `<span class="badge b-ok">Reconnu</span>` : st === "check" ? `<span class="badge b-warn">À vérifier</span>` : `<span class="badge b-bad">À relier</span>`;
-  const colTxt = ["name","qty","total","date"].filter(k => map[k] != null).map(k => ({name:"produit",qty:"quantité",total:"montant",date:"date"})[k] + " = « " + esc(det.header[map[k]]) + " »").join(" · ");
+  const colTxt = det.pre ? "" : ["name","qty","total","date"].filter(k => map[k] != null).map(k => ({name:"produit",qty:"quantité",total:"montant",date:"date"})[k] + " = « " + esc(det.header[map[k]]) + " »").join(" · ");
   openSheet(`<h2 class="h">Ventes à importer</h2><div class="sub">${esc(fname)} · ${g.lines} ligne${g.lines > 1 ? "s" : ""} lue${g.lines > 1 ? "s" : ""}</div>
-    <div class="card" style="padding:12px 14px"><div class="meta" style="white-space:normal">Colonnes : ${colTxt}</div><button class="link" id="mCols" style="padding:6px 0 0">Modifier les colonnes</button></div>
+    ${det.pre ? (det.sansDetail ? `<div class="card" style="padding:12px 14px"><div class="meta" style="white-space:normal;color:var(--amber2)">${det.sansDetail} paiement${det.sansDetail > 1 ? "s" : ""} sans détail des produits (${eur(det.totalSansDetail)}) : saisis en montant libre dans la caisse, ils ne peuvent pas être comptés.</div></div>` : "")
+      : `<div class="card" style="padding:12px 14px"><div class="meta" style="white-space:normal">Colonnes : ${colTxt}</div><button class="link" id="mCols" style="padding:6px 0 0">Modifier les colonnes</button></div>`}
     <div class="field"><label for="mDate">Date du service</label><input id="mDate" type="date" value="${g.date || today}" max="${today}"></div>
     <div class="lbl" style="margin-top:6px"><span>Produits de la caisse</span><span id="mLeft" style="text-transform:none;letter-spacing:0"></span></div>
     <div class="card list">${rows.map((r, i) => `<div class="row" style="flex-wrap:wrap"><div class="grow"><div class="name">${esc(r.label)}</div><div class="meta">× ${r.q}${r.hasTtc ? " · " + eur(r.ttc) : ""}</div></div>${badge(r.status)}
       <div class="field" style="flex-basis:100%;margin:8px 0 0"><select data-i="${i}" aria-label="Produit de la carte pour ${esc(r.label)}">${opts(choices, r.choice)}</select></div></div>`).join("")}</div>
     <div class="card"><div class="res" id="mSum"></div></div>
     <button class="btn" id="mGo">Importer la soirée</button>`, () => {
-    $("mCols").onclick = () => impColumns(det, map, ref, fname);
+    if ($("mCols")) $("mCols").onclick = () => impColumns(det, map, ref, fname);
     const resolved = () => { const agg = new Map();
       rows.forEach(r => { if (!r.choice || r.choice === "ignore") return;
         const a = agg.get(r.choice) || {key: r.choice, q: 0, ttc: 0, hasTtc: true};
@@ -1722,6 +1732,60 @@ const ABO_HT = {pilote: 29.99, bar: 49, pro: 79}, ABO_RESTO = 20;
 const ABO_NOMS = {pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro"};
 const ABO_ST = {aucun: ["Pas d'abonnement", ""], en_attente: ["Paiement en attente", "b-warn"], actif: ["Actif", "b-ok"], impaye: ["Paiement refusé", "b-bad"], annule: ["Résilié", "b-warn"]};
 const aboHT = (f, r) => ABO_HT[f] + (r && f !== "pro" ? ABO_RESTO : 0);
+/* ================= Caisse enregistreuse connectée (SumUp pour commencer) ================= */
+const CAISSE_NOMS = {sumup: "SumUp"};
+async function caisseCall(body) {
+  const {data, error} = await sb.functions.invoke("caisse", {body: {etab: ETAB.id, ...body}});
+  if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch (e) {} throw new Error(m); }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+function caisseSheet() {
+  if (MODE !== "cloud") return toast("Créez votre compte pour connecter votre caisse");
+  if (isBarman()) return;
+  const c = S.caisse;
+  const autres = `<div class="card"><div class="name" style="font-size:14px">Votre caisse n'est pas dans la liste ?</div>
+    <p class="tip" style="margin-top:6px">Zelty, L'Addition, Lightspeed, Hiboutik et les autres arrivent au fur et à mesure. En attendant, importez le fichier des ventes de votre caisse (Service › Importer les ventes) : ça marche avec toutes les caisses.</p>
+    <button class="link" id="caAsk" style="padding:6px 0 0">Dire quelle caisse j'utilise</button></div>`;
+  if (c) return openSheet(`<h2 class="h">Ma caisse enregistreuse</h2><div class="sub">Les ventes de votre caisse arrivent dans Dosis Bar sans ressaisie.</div>
+    <div class="card"><div class="row" style="padding:0;border:0"><div class="grow"><div class="name">${esc(CAISSE_NOMS[c.fournisseur] || c.fournisseur)} · connectée ✓</div>
+      <div class="meta" style="white-space:normal">${esc(c.nom_compte || "")}${c.derniere_synchro ? " · dernières ventes récupérées le " + new Date(c.derniere_synchro).toLocaleString("fr-FR", {day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"}) : ""}</div>
+      ${c.erreur ? `<div class="meta" style="white-space:normal;color:var(--bad);margin-top:4px">${esc(c.erreur)}</div>` : ""}</div></div></div>
+    <button class="btn" id="caGet">Récupérer les ventes d'une journée</button><div class="gap"></div>
+    <button class="btn ghost danger" id="caOff">Déconnecter la caisse</button>${autres}`, () => {
+    $("caGet").onclick = () => { closeSheet(); setTimeout(importSheet, 250); };
+    $("caOff").onclick = async () => { const b = $("caOff"); if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = "Confirmer : déconnecter la caisse"; return; } b.classList.add("busy");
+      try { await caisseCall({action: "deconnecter"}); S.caisse = null; save(); toast("Caisse déconnectée"); caisseSheet(); } catch (e) { $("caOff").classList.remove("busy"); toast(frErr(e)); } };
+    $("caAsk").onclick = () => { closeSheet(); setTimeout(avisSheet, 250); };
+  });
+  openSheet(`<h2 class="h">Ma caisse enregistreuse</h2><div class="sub">Connectez votre caisse : les ventes de chaque journée arrivent dans Dosis Bar, sans fichier à exporter.</div>
+    <div class="card"><div class="name">SumUp</div><div class="meta" style="white-space:normal;margin-top:4px">Caisse SumUp POS, POS Lite ou application SumUp avec catalogue de produits.</div>
+      <ol class="tip" style="margin:10px 0 0 18px;padding:0;line-height:1.6">
+        <li>Ouvrez <b>me.sumup.com</b> et connectez-vous.</li>
+        <li>Allez dans <b>Paramètres › Clés API</b> (ou « Développeurs »), puis <b>Créer une clé</b>.</li>
+        <li>Copiez la clé et collez-la ci-dessous.</li></ol>
+      <div class="field" style="margin-top:12px"><label for="caKey">Clé API SumUp</label><input id="caKey" autocomplete="off" spellcheck="false" placeholder="sup_sk_…"></div>
+      <button class="btn" id="caGo">Connecter SumUp</button>
+      <p class="tip" style="margin-top:8px">La clé sert uniquement à lire vos ventes. Elle est gardée sur notre serveur et n'est jamais affichée dans l'app, même pour vos barmen.</p></div>${autres}`, () => {
+    $("caGo").onclick = async () => { const cle = $("caKey").value.trim(); if (cle.length < 20) { toast("Collez la clé API complète"); return $("caKey").focus(); }
+      $("caGo").classList.add("busy");
+      try { const r = await caisseCall({action: "connecter", fournisseur: "sumup", cle}); S.caisse = {fournisseur: "sumup", nom_compte: r.nom}; save(); toast("SumUp connectée ✓"); caisseSheet(); }
+      catch (e) { $("caGo").classList.remove("busy"); toast(frErr(e)); } };
+    $("caAsk").onclick = () => { closeSheet(); setTimeout(avisSheet, 250); };
+  });
+}
+async function caisseVentes() {
+  const d = $("caDate").value; if (!d) return toast("Choisissez la journée");
+  $("caFetch").classList.add("busy");
+  try {
+    const r = await caisseCall({action: "ventes", date: d});
+    S.caisse = Object.assign({}, S.caisse, {derniere_synchro: new Date().toISOString(), erreur: null}); save();
+    if (!r.items.length) { $("caFetch").classList.remove("busy");
+      return toast(r.transactions ? `${r.transactions} paiement${r.transactions > 1 ? "s" : ""} trouvé${r.transactions > 1 ? "s" : ""}, mais sans détail des produits : utilisez le catalogue de produits dans votre caisse SumUp` : "Aucune vente SumUp ce jour-là"); }
+    const lines = r.items.reduce((s, i) => s + i.q, 0);
+    impMatch({pre: {items: r.items, lines, date: r.date}, src: r.source, sansDetail: r.sansDetail, totalSansDetail: r.totalSansDetail}, {}, r.ref, `${r.source} · ${new Date(r.date + "T12:00:00").toLocaleDateString("fr-FR", {weekday: "long", day: "numeric", month: "long"})}`);
+  } catch (e) { $("caFetch").classList.remove("busy"); toast(frErr(e)); }
+}
 async function aboCall(body) {
   const {data, error} = await sb.functions.invoke("abonnement", {body: {etab: ETAB.id, ...body}});
   if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch (e) {} throw new Error(m); }
@@ -1946,9 +2010,9 @@ function settingsSheet() {
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
     <button class="btn ghost" id="sAl" style="margin-top:10px">⚠️ Carte des allergènes</button>
     <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>
-    <button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
+    <button class="btn ghost" id="sCa" style="margin-top:10px">🔌 Ma caisse enregistreuse${S.caisse ? " · " + esc(CAISSE_NOMS[S.caisse.fournisseur] || "") + " connectée" : ""}</button><button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sAb").onclick = aboSheet;
+    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sCa").onclick = caisseSheet; $("sAb").onclick = aboSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
