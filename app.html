@@ -116,7 +116,7 @@
       <section class="view" id="v-calc">
         <h2 class="h">Calculs</h2>
         <div class="sub">Pour décider avec des chiffres, pas au feeling</div>
-        <div class="seg" id="calcSeg"><button data-v="glass" class="on">Un verre</button><button data-v="pour">Surdosage</button><button data-v="price">Hausse de prix</button></div>
+        <div class="seg" id="calcSeg"><button data-v="glass" class="on">Un verre</button><button data-v="piece">À la pièce</button><button data-v="pour">Surdosage</button><button data-v="price">Hausse de prix</button></div>
 
         <div id="c-glass">
           <div class="seg" id="cAlc" style="margin-bottom:12px"><button data-v="1" class="on">Alcool · TVA 20 %</button><button data-v="0">Sans alcool · 10 %</button></div>
@@ -132,6 +132,24 @@
             <div style="display:flex;justify-content:space-between;align-items:center"><span class="tip">Prix TTC conseillé</span><b class="h" id="tPrice" style="font-size:24px;color:var(--amber2)">—</b></div>
           </div>
           <button class="btn" id="cSave">Ajouter à ma carte</button>
+        </div>
+
+        <div id="c-piece" style="display:none">
+          <p class="tip" style="margin:0 0 12px">Pour ce qui se vend entier : bouteille de vin ou de champagne, bière en bouteille, soda, canette, eau.</p>
+          <div class="seg" id="qAlc" style="margin-bottom:12px"><button data-v="1" class="on">Alcool · TVA 20 %</button><button data-v="0">Sans alcool · 10 %</button></div>
+          <div class="two">
+            <div class="field"><label>Prix d'achat HT (€)</label><input id="qBuy" inputmode="decimal" value="24"></div>
+            <div class="field"><label>Pour combien de pièces</label><input id="qNb" inputmode="numeric" value="24"></div>
+            <div class="field"><label>Prix de vente TTC d'une pièce (€)</label><input id="qSell" inputmode="decimal" value="6"></div>
+            <div class="field"><label>Nom <small>(facultatif)</small></label><input id="qName" placeholder="Bière blonde 33 cl"></div>
+          </div>
+          <p class="tip" style="margin:-4px 0 12px">Exemple : un carton de 24 bières à 24 € HT. Pour une seule bouteille achetée 9 €, mettez 9 € pour 1 pièce.</p>
+          <div class="card"><div class="res" id="qRes"></div><p class="tip" id="qTip" style="margin-top:10px"></p></div>
+          <div class="card">
+            <div class="field" style="margin-bottom:6px"><label>Taux de marge visé : <b id="qtLbl" style="color:var(--amber2)"></b></label><input id="qRange" class="range" type="range" min="50" max="90" value="75"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><span class="tip">Prix TTC conseillé de la pièce</span><b class="h" id="qtPrice" style="font-size:24px;color:var(--amber2)"></b></div>
+          </div>
+          <button class="btn" id="qSave">Ajouter à ma carte</button>
         </div>
 
         <div id="c-pour" style="display:none">

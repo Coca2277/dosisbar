@@ -17,7 +17,7 @@ const isBarman = () => MODE === "cloud" && ETAB && ETAB.role === "barman";
 /* ================= Données ================= */
 const CATS = {Rhum:"🥃",Whisky:"🥃",Gin:"🍸",Vodka:"🍸",Anisé:"🌿",Liqueur:"🥃",Bière:"🍺","Bière pression":"🍺",Cidre:"🍏",Vin:"🍷",Champagne:"🍾",Soft:"🥤",Jus:"🍊",Sirop:"🍒",Eau:"💧",Café:"☕",Thé:"🍵",Chocolat:"🍫",Lait:"🥛",Autre:"🍶"};
 /* Unités : liquides en cl, café et poudres en g, sachets et pièces à l'unité */
-const UNITS = {cl: ["cl", "centilitres (liquides)"], g: ["g", "grammes (café, poudre)"], pce: ["pièce", "pièces (sachets, capsules)"]};
+const UNITS = {cl: ["cl", "centilitres (liquides)"], g: ["g", "grammes (café, poudre)"], pce: ["pièce", "pièces (bouteilles, canettes, sachets, capsules)"]};
 const uOf = p => p && UNITS[p.u] ? p.u : "cl";
 const uTxt = (p, n) => { const u = uOf(p); return u === "pce" ? (n > 1 ? "pièces" : "pièce") : u; };
 const CAT_UNIT = {Café: ["g", 1000, 7], Chocolat: ["g", 1000, 25], Thé: ["pce", 100, 1], Lait: ["cl", 100, 15]};
@@ -858,23 +858,38 @@ $("closeSvc").onclick = () => {
 };
 
 /* ================= Calculs ================= */
-let calcTab = "glass", cAlc = 1;
+let calcTab = "glass", cAlc = 1, qAlc = 1;
 $("calcSeg").querySelectorAll("button").forEach(b => b.onclick = () => { calcTab = b.dataset.v; $("calcSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderCalc(); });
 $("cAlc").querySelectorAll("button").forEach(b => b.onclick = () => { cAlc = +b.dataset.v; $("cAlc").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); calcGlass(); });
 ["cBuy","cCap","cDose","cSell","tRange"].forEach(i => $(i).oninput = calcGlass);
+["qBuy","qNb","qSell","qRange"].forEach(i => $(i).oninput = calcPiece);
+$("qAlc").querySelectorAll("button").forEach(b => b.onclick = () => { qAlc = +b.dataset.v; $("qAlc").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); calcPiece(); });
 ["pPlan","pReal","pGlass","pDays"].forEach(i => $(i).oninput = calcPour);
 $("pProd").onchange = () => { const p = byId($("pProd").value); if (p) { $("pPlan").value = f1(p.d); $("pReal").value = f1(p.d + 1); } calcPour(); };
 ["xCat","xUp","xVol"].forEach(i => $(i).oninput = calcPrice);
 function renderCalc() {
-  ["glass","pour","price"].forEach(t => $("c-" + t).style.display = t === calcTab ? "block" : "none");
+  ["glass","piece","pour","price"].forEach(t => $("c-" + t).style.display = t === calcTab ? "block" : "none");
   const opts = S.products.filter(p => p.a && p.d < p.cap).map(p => `<option value="${esc(p.id)}">${esc(p.n)}</option>`).join("");
   const cur = $("pProd").value; $("pProd").innerHTML = opts;
   if (cur && byId(cur)) $("pProd").value = cur; else { const p = byId($("pProd").value); if (p) { $("pPlan").value = f1(p.d); $("pReal").value = f1(p.d + 1); } }
   const xc = $("xCat").value || "Spiritueux";
   $("xCat").innerHTML = ["Spiritueux", "Toute la carte", ...new Set(S.products.map(p => p.c)), "Cocktails"].map(c => `<option>${esc(c)}</option>`).join(""); $("xCat").value = xc;
   if (!$("xVol").value) $("xVol").value = S.vol;
-  calcGlass(); calcPour(); calcPrice();
+  calcGlass(); calcPiece(); calcPour(); calcPrice();
 }
+/* Vente à la pièce : bouteille entière, bière, soda, canette (achat au lot possible) */
+function calcPiece() {
+  const nb = Math.max(1, Math.round(num($("qNb").value)) || 1), p = {a: qAlc, b: num($("qBuy").value), cap: nb, d: 1, u: "pce", s: num($("qSell").value)}, c = prodCalc(p);
+  const coef = c.cost > 0 ? c.ht / c.cost : NaN;
+  $("qRes").innerHTML = `<div class="hl"><div><div class="l">Vous gagnez par pièce vendue (HT)</div><div class="v h">${eur(c.marg)}</div></div>${glass((c.rate || 0) / 100, {w:40, col:tone(c.rate)})}</div>
+    <div><div class="l">Coût d'une pièce</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Prix de vente HT</div><div class="v h">${eur(c.ht)}</div></div>
+    <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Coefficient</div><div class="v h">${isFinite(coef) ? "× " + coef.toFixed(1).replace(".", ",") : "—"}</div></div>
+    ${nb > 1 ? `<div><div class="l">Le lot de ${nb}, vendu (HT)</div><div class="v h">${eur(nb * c.ht, 0)}</div></div><div><div class="l">Gagné sur le lot (HT)</div><div class="v h">${eur(nb * c.marg, 0)}</div></div>` : ""}${chBlock(c, !!qAlc)}`;
+  $("qTip").innerHTML = !isFinite(c.rate) ? "Remplissez les champs." : c.rate >= S.target ? "Excellent : cette pièce atteint votre objectif." : `Pour atteindre votre objectif de ${S.target} %, vendez-la <b>${eur(suggest(c.cost, !!qAlc, S.target))}</b>.`;
+  const t = +$("qRange").value; $("qtLbl").textContent = t + " %"; $("qtPrice").textContent = eur(suggest(c.cost, !!qAlc, t));
+}
+$("qSave").onclick = () => { const nb = Math.max(1, Math.round(num($("qNb").value)) || 1);
+  productSheet(null, {n: $("qName").value.trim(), c: qAlc ? "Bière" : "Soft", a: qAlc, u: "pce", b: num($("qBuy").value), cap: nb, d: 1, s: num($("qSell").value), st: 0, m: Math.min(nb, 6)}); };
 function calcGlass() {
   const p = {a:cAlc,b:num($("cBuy").value),cap:num($("cCap").value),d:num($("cDose").value),s:num($("cSell").value)}, c = prodCalc(p);
   const coef = c.cost > 0 ? c.ht / c.cost : NaN, gl = p.d > 0 ? Math.floor(p.cap / p.d) : NaN;
