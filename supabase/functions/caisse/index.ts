@@ -15,12 +15,20 @@ const SUMUP = "https://api.sumup.com";
 async function sumup(cle: string, path: string) {
   const r = await fetch(path.startsWith("http") ? path : SUMUP + path, { headers: { Authorization: "Bearer " + cle, Accept: "application/json" } });
   const t = await r.text(); let j: any = null; try { j = t ? JSON.parse(t) : null; } catch { /* réponse non JSON */ }
-  if (r.status === 401 || r.status === 403) throw new Error("Clé SumUp refusée : vérifiez qu'elle est complète et qu'elle a bien les droits sur les transactions");
+  if (r.status === 401 || r.status === 403) { console.error("SumUp", r.status, path.split("?")[0], t.slice(0, 300)); const e = new Error("Clé SumUp refusée : vérifiez qu'elle est complète et qu'elle a bien les droits sur les transactions"); (e as any).refus = true; throw e; }
   if (!r.ok) throw new Error((j && (j.message || j.error_message || j.detail)) || "Erreur SumUp (" + r.status + ")");
   return j;
 }
-async function sumupCompte(cle: string) {
-  const m = await sumup(cle, "/v0.1/memberships?resource.type=merchant&status=accepted");
+async function sumupCompte(cle: string, compteSaisi?: string) {
+  // 1) Avec l'identifiant marchand saisi : on vérifie directement l'accès aux ventes
+  if (compteSaisi) {
+    await sumup(cle, `/v2.1/merchants/${encodeURIComponent(compteSaisi)}/transactions/history?limit=1`);
+    return { compte: compteSaisi, nom: compteSaisi };
+  }
+  // 2) Sinon on retrouve le compte à partir de la clé
+  let m: any;
+  try { m = await sumup(cle, "/v0.1/memberships"); }
+  catch (e) { if ((e as any).refus) { const x = new Error("BESOIN_IDENTIFIANT"); throw x; } throw e; }
   const it = (m?.items || []).find((x: any) => x?.resource?.type === "merchant") || (m?.items || [])[0];
   const code = it?.resource?.id || it?.resource_id;
   if (!code) throw new Error("Aucun compte commerçant SumUp trouvé avec cette clé");
@@ -85,9 +93,17 @@ Deno.serve(async (req) => {
 
     if (b.action === "connecter") {
       if (b.fournisseur !== "sumup") return json({ error: "Caisse pas encore prise en charge" }, 400);
-      const cle = String(b.cle || "").trim();
+      const cle = String(b.cle || "").replace(/\s+/g, "");
+      if (/^sup_pk_/i.test(cle)) return json({ error: "C'est la clé publique (sup_pk_…). Collez la clé secrète, celle qui commence par sup_sk_" }, 400);
       if (cle.length < 20) return json({ error: "Collez la clé API complète de SumUp" }, 400);
-      const c = await sumupCompte(cle);
+      const compteSaisi = String(b.compte || "").trim().toUpperCase();
+      if (compteSaisi && !/^[A-Z0-9]{6,12}$/.test(compteSaisi)) return json({ error: "Identifiant marchand invalide : 8 lettres et chiffres, par exemple MH4H92C7" }, 400);
+      let c;
+      try { c = await sumupCompte(cle, compteSaisi || undefined); }
+      catch (e) {
+        if ((e as Error).message === "BESOIN_IDENTIFIANT") return json({ error: "SumUp ne donne pas le compte avec cette clé : indiquez votre identifiant marchand", besoinCompte: true }, 400);
+        throw e;
+      }
       await admin.from("caisse_cles").upsert({ etab_id: etab, cle });
       await admin.from("caisse_connexions").upsert({ etab_id: etab, fournisseur: "sumup", compte: c.compte, nom_compte: c.nom, erreur: null });
       return json({ ok: true, nom: c.nom });

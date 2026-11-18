@@ -1764,13 +1764,19 @@ function caisseSheet() {
         <li>Ouvrez <b>me.sumup.com</b> et connectez-vous.</li>
         <li>Allez dans <b>Paramètres › Clés API</b> (ou « Développeurs »), puis <b>Créer une clé</b>.</li>
         <li>Copiez la clé et collez-la ci-dessous.</li></ol>
-      <div class="field" style="margin-top:12px"><label for="caKey">Clé API SumUp</label><input id="caKey" autocomplete="off" spellcheck="false" placeholder="sup_sk_…"></div>
+      <div class="field" style="margin-top:12px"><label for="caKey">Clé API SumUp (la clé secrète)</label><input id="caKey" autocomplete="off" spellcheck="false" placeholder="sup_sk_…"></div>
+      <div class="field" id="caCptBox" hidden><label for="caCpt">Identifiant marchand SumUp</label><input id="caCpt" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="MH4H92C7">
+        <p class="tip" style="margin-top:6px">8 lettres et chiffres, visibles sur me.sumup.com dans <b>Profil</b> ou <b>Paramètres du compte</b> (« Identifiant marchand » ou « Merchant ID »).</p></div>
       <button class="btn" id="caGo">Connecter SumUp</button>
       <p class="tip" style="margin-top:8px">La clé sert uniquement à lire vos ventes. Elle est gardée sur notre serveur et n'est jamais affichée dans l'app, même pour vos barmen.</p></div>${autres}`, () => {
     $("caGo").onclick = async () => { const cle = $("caKey").value.trim(); if (cle.length < 20) { toast("Collez la clé API complète"); return $("caKey").focus(); }
       $("caGo").classList.add("busy");
-      try { const r = await caisseCall({action: "connecter", fournisseur: "sumup", cle}); S.caisse = {fournisseur: "sumup", nom_compte: r.nom}; save(); toast("SumUp connectée ✓"); caisseSheet(); }
-      catch (e) { $("caGo").classList.remove("busy"); toast(frErr(e)); } };
+      const compte = $("caCptBox").hidden ? "" : $("caCpt").value.trim();
+      if (!$("caCptBox").hidden && !compte) { $("caGo").classList.remove("busy"); toast("Indiquez votre identifiant marchand SumUp"); return $("caCpt").focus(); }
+      try { const r = await caisseCall({action: "connecter", fournisseur: "sumup", cle, compte}); S.caisse = {fournisseur: "sumup", nom_compte: r.nom}; save(); toast("SumUp connectée ✓"); caisseSheet(); }
+      catch (e) { $("caGo").classList.remove("busy"); const m = frErr(e);
+        if (/identifiant marchand/.test(m) && $("caCptBox").hidden) { $("caCptBox").hidden = false; $("caCpt").focus(); }
+        toast(m); } };
     $("caAsk").onclick = () => { closeSheet(); setTimeout(avisSheet, 250); };
   });
 }
