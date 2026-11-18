@@ -26,7 +26,7 @@ const recEmoji = c => c === "Boissons chaudes" ? "☕" : c === "Sans alcool" ? "
 /* Formats de vente types, par catégorie : [nom, cl (0 = toute la bouteille)] */
 const FMT_TYPES = {Vin: [["Verre 12 cl", 12], ["Pichet 25 cl", 25], ["Pichet 50 cl", 50], ["Bouteille", 0]], Champagne: [["Coupe 12 cl", 12], ["Bouteille", 0]],
   "Bière pression": [["Galopin 12,5 cl", 12.5], ["Demi 25 cl", 25], ["Pinte 50 cl", 50], ["Pichet 1 L", 100]], Cidre: [["Bolée 25 cl", 25], ["Bouteille", 0]],
-  _spirit: [["Double", -2], ["Bouteille (VIP)", 0]], Café: [["Double", -2], ["Allongé", -1], ["Ristretto", -1]], Thé: [["Théière (2 sachets)", -2]], Soft: [["Verre 25 cl", 25], ["Carafe 1 L", 100]], Jus: [["Verre 25 cl", 25], ["Carafe 1 L", 100]]};
+  _spirit: [["Double", -2], ["Bouteille entière", 0]], Café: [["Double", -2], ["Allongé", -1], ["Ristretto", -1]], Thé: [["Théière (2 sachets)", -2]], Soft: [["Verre 25 cl", 25], ["Carafe 1 L", 100]], Jus: [["Verre 25 cl", 25], ["Carafe 1 L", 100]]};
 const SPIRITS = ["Rhum", "Whisky", "Gin", "Vodka", "Anisé", "Liqueur"];
 const contName = p => !p ? "bouteille" : p.c === "Bière pression" ? "fût" : ["Café", "Chocolat"].includes(p.c) ? "paquet" : p.c === "Thé" ? "boîte" : "bouteille";
 const KEY = "dosisbar.v2", QKEY = "dosisbar.queue", CKEY = "dosisbar.cache", EKEY = "dosisbar.etab", MKEY = "dosisbar.mode";
@@ -1203,7 +1203,8 @@ function productSheet(id, preset) {
         <button type="button" class="x" data-del="${k}" aria-label="Retirer ce format">✕</button></div>`).join("");
       $("fmL").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const f = fm[+e.dataset.k]; f[e.dataset.f] = e.dataset.f === "n" ? e.value : num(e.value); upd(); });
       $("fmL").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { fm.splice(+b.dataset.del, 1); fmDraw(); upd(); });
-      const x = read(), types = FMT_TYPES[x.c] || (SPIRITS.includes(x.c) ? FMT_TYPES._spirit : []);
+      const x = read(), types = [...(FMT_TYPES[x.c] || (SPIRITS.includes(x.c) ? FMT_TYPES._spirit : []))];
+      if (contName(x) === "bouteille" && uOf(x) !== "pce" && !types.some(t => t[1] === 0)) types.push(["Bouteille entière", 0]);
       $("fmTypes").innerHTML = types.filter(([n]) => !fm.some(f => f.n === n) && n !== x.fn).map(([n, cl]) => `<button type="button" class="chip" data-t="${esc(n)}" data-cl="${cl}">+ ${esc(n)}</button>`).join("");
       $("fmTypes").querySelectorAll("[data-t]").forEach(b => b.onclick = () => { const y = read(), cl = +b.dataset.cl, d = cl === 0 ? y.cap : cl < 0 ? y.d * -cl : cl;
         const c0 = pcost(y, d), sg = d >= y.cap ? suggest(c0, !!y.a, S.target2 ?? 65) : suggest(c0, !!y.a, S.target);
@@ -1211,7 +1212,7 @@ function productSheet(id, preset) {
     };
     $("fmAdd").onclick = () => { fm.push({id: "n" + Date.now(), n: "", d: read().d, s: read().s}); fmDraw(); upd(); const i = $("fmL").querySelector(`[data-k="${fm.length - 1}"][data-f="n"]`); if (i) i.focus(); };
     const fmRates = x => { const t = (d, s) => { const c = prodCalc({...x, d, s}), T = d >= x.cap ? (S.target2 ?? 65) : S.target; return `<span style="color:${tone(c.rate, T)}">${pct(c.rate)}</span>`; };
-      $("fmr_main").innerHTML = x.d > 0 && x.s > 0 ? t(x.d, x.s) : ""; fm.forEach((f, k) => { const e = $("fmr_" + k); if (e) e.innerHTML = f.d > 0 && f.s > 0 ? t(f.d, f.s) : ""; });
+      $("fmr_main").innerHTML = x.d > 0 && x.s > 0 ? t(x.d, x.s) : ""; fm.forEach((f, k) => { const e = $("fmr_" + k); if (e) e.innerHTML = f.d > 0 && f.s > 0 ? (x.cap > 0 && f.d >= x.cap && uOf(x) !== "pce" ? `<small style="color:var(--mut);display:block;font-size:10px">1 ${contName(x)}</small>` : "") + t(f.d, f.s) : ""; });
       $("fPtl").textContent = x.pt + " %"; const cn = contName(x);
       $("fBl").textContent = `Prix ${cn === "fût" ? "du fût" : cn === "paquet" ? "du paquet" : cn === "boîte" ? "de la boîte" : "bouteille"} HT (€)`; $("fStl").textContent = `Stock (${cn}s)`;
       const u = uOf(x); $("fCapl").textContent = `Contenance (${u === "pce" ? "pièces" : u})`; $("fDl").textContent = `${u === "pce" ? "pièces" : u} servis`;
