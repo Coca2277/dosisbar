@@ -9,4 +9,4 @@ window.DOSIS_CONFIG = {
 };
 
 /* Email de commande du fournisseur partenaire Paris Rhum Club (à remplir entre les guillemets) */
-window.PRC_EMAIL = "";
+window.PRC_EMAIL = "parisrhumclub@outlook.fr";
