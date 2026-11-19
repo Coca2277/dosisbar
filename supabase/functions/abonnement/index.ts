@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
       }
       const essai = formule === "pilote";
       const p = await mollie(`/customers/${client}/payments`, "POST", {
-        amount: { currency: "EUR", value: essai ? "0.01" : euros(t.ttc) },
+        amount: { currency: "EUR", value: essai ? "1.00" : euros(t.ttc) },
         description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – 1er mois`,
         sequenceType: "first",
         redirectUrl: APP + "?abonnement=retour",

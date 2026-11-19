@@ -1888,7 +1888,7 @@ function aboSheet() {
     const upd = () => { document.querySelectorAll(".abo").forEach(b => b.classList.toggle("on", b.dataset.f === f));
       $("abCodeF").hidden = !(f === "pilote" && !actif); $("abRestoF").hidden = f === "pro"; r = $("abResto").checked;
       const ht = aboHT(f, r); $("abHT").textContent = eur(ht) + " HT"; $("abTTC").textContent = eur(Math.round(ht * 120) / 100);
-      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 0,01 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
+      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
       $("abGo").textContent = actif ? (f === a.formule && r === !!a.resto ? "Formule actuelle" : "Changer de formule") : "Continuer vers le paiement";
       $("abGo").disabled = actif && f === a.formule && r === !!a.resto; };
     document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });
