@@ -1863,6 +1863,8 @@ async function aboRetour() {
   toast("Merci ! Confirmation du paiement en cours…");
   for (let i = 0; i < 6; i++) { await new Promise(r => setTimeout(r, 2500)); await aboRefresh();
     if (S.abo && S.abo.statut === "actif") { toast("Abonnement actif ✓"); render(); return; } }
+  try { const last = await q(sb.from("paiements").select("statut").eq("etab_id", ETAB.id).order("le", {ascending: false}).limit(1).maybeSingle());
+    if (last && /failed|canceled|expired/.test(last.statut)) return toast(last.statut === "canceled" ? "Paiement annulé : rien n'a été prélevé" : "Paiement refusé par la banque : rien n'a été prélevé. Réessayez ou utilisez une autre carte"); } catch (e) {}
   toast("Paiement en cours de validation : il apparaîtra dans quelques minutes");
 }
 
