@@ -727,11 +727,15 @@ armSeg();
 $("q").oninput = () => renderMenu();
 let cuTab = "d";
 /* ================= Fournisseur partenaire : Paris Rhum Club ================= */
-const PRC = {n: "Paris Rhum Club", contact: "", email: "", tel: "", jours: "", site: "rhumcubain.com", prc: true,
+const PRC = {n: "Paris Rhum Club", contact: "", email: window.PRC_EMAIL || "", tel: "06 61 81 99 81", jours: "", site: "rhumcubain.com (espace professionnel en bas de la page d'accueil)", prc: true,
   note: "Fournisseur partenaire de Dosis Bar : rhums, liqueurs, bières et cocktails cubains"};
 const prcFour = () => fours().find(f => f.prc || /paris rhum club/i.test(f.n || ""));
 async function ensurePrc() {
-  if (isBarman() || !canEdit() || prcFour()) return prcFour();
+  const ex = prcFour();
+  if (ex && ex.prc && !isBarman() && canEdit() && ((!ex.email && PRC.email) || !ex.tel)) {   // compléter les coordonnées des fiches déjà créées
+    try { await actSaveFour(ex.id, {...ex, email: ex.email || PRC.email, tel: ex.tel || PRC.tel, site: PRC.site}); save(); } catch (e) {}
+  }
+  if (isBarman() || !canEdit() || ex) return ex;
   if (cloud() && S.opts && S.opts.prcInit) return null;     // retiré volontairement par le patron
   try { await actSaveFour(null, {...PRC}); if (cloud()) await actOpts({prcInit: true}); else { S.opts = S.opts || {}; S.opts.prcInit = true; } save(); } catch (e) {}
   return prcFour();

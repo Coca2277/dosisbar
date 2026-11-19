@@ -7,3 +7,6 @@ window.DOSIS_CONFIG = {
   supabaseUrl: "https://zksoxdoqfabbhzwyymbp.supabase.co",
   supabaseAnonKey: "sb_publishable_qQ-Pa19t8EB-0rEccLga1g_JCM5GO4D"
 };
+
+/* Email de commande du fournisseur partenaire Paris Rhum Club (à remplir entre les guillemets) */
+window.PRC_EMAIL = "";
