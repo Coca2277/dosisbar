@@ -726,7 +726,52 @@ function armSeg() { $("menuSeg").querySelectorAll("button").forEach(b => { b.cla
 armSeg();
 $("q").oninput = () => renderMenu();
 let cuTab = "d";
+/* ================= Fournisseur partenaire : Paris Rhum Club ================= */
+const PRC = {n: "Paris Rhum Club", contact: "", email: "", tel: "", jours: "", site: "rhumcubain.com", prc: true,
+  note: "Fournisseur partenaire de Dosis Bar : rhums, liqueurs, bières et cocktails cubains"};
+const prcFour = () => fours().find(f => f.prc || /paris rhum club/i.test(f.n || ""));
+async function ensurePrc() {
+  if (isBarman() || !canEdit() || prcFour()) return prcFour();
+  if (cloud() && S.opts && S.opts.prcInit) return null;     // retiré volontairement par le patron
+  try { await actSaveFour(null, {...PRC}); if (cloud()) await actOpts({prcInit: true}); else { S.opts = S.opts || {}; S.opts.prcInit = true; } save(); } catch (e) {}
+  return prcFour();
+}
+const normN = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+function prcDose(x) { return x.c === "Bière" ? x.cl : 4; }
+function prcSheet() {
+  const L = window.CATALOGUE_PRC || [], have = new Set(S.products.map(p => normN(p.n))), sel = new Set();
+  const marques = [...new Set(L.map(x => x.m))];
+  const row = (x, i) => { const in_ = have.has(normN(x.full));
+    return `<label class="row prcrow${in_ ? " dim" : ""}" data-m="${esc(x.m)}" data-t="${esc(normN(x.full + " " + x.m))}"><input type="checkbox" data-i="${i}" ${in_ ? "disabled" : ""}>
+      <div class="grow"><div class="name">${esc(x.n)}</div><div class="meta">${f1(x.cl)} cl${x.deg ? " · " + f1(x.deg) + " %" : ""} · carton de ${x.k}${in_ ? " · déjà dans votre carte" : ""}</div></div>
+      <div class="right"><b>${x.b ? eur(x.b) + " HT" : `<span style="color:var(--mut);font-weight:500">prix sur demande</span>`}</b></div></label>`; };
+  openSheet(`<h2 class="h"><img src="icons/prc.svg" width="26" height="26" alt="" style="vertical-align:-5px;margin-right:8px">Catalogue Paris Rhum Club</h2>
+    <div class="sub">Fournisseur partenaire de Dosis Bar. Cochez ce que vous vendez : les produits arrivent dans votre carte avec leur prix d'achat, une dose de 4 cl et un prix de vente conseillé, à ajuster.</div>
+    <div class="search" style="margin-bottom:8px"><input id="prcQ" placeholder="Rechercher une marque, un rhum…" autocomplete="off"></div>
+    <div id="prcL">${marques.map(m => `<div class="lbl prcm" data-mg="${esc(m)}"><span>${esc(m)}</span></div><div class="card list">${L.map((x, i) => x.m === m ? row(x, i) : "").join("")}</div>`).join("")}</div>
+    <p class="tip">Prix HT par bouteille, tarif professionnel 2026. Pour « prix sur demande », complétez le prix d'achat dans la fiche du produit.</p>
+    <div class="prcbar"><button class="btn" id="prcGo" disabled>Cochez des produits</button></div>`, () => {
+    const upd = () => { const n = sel.size; $("prcGo").disabled = !n; $("prcGo").textContent = n ? `Ajouter ${n} produit${n > 1 ? "s" : ""} à ma carte` : "Cochez des produits"; };
+    $("prcL").querySelectorAll("input[data-i]").forEach(c => c.onchange = () => { c.checked ? sel.add(+c.dataset.i) : sel.delete(+c.dataset.i); upd(); });
+    $("prcQ").oninput = () => { const t = normN($("prcQ").value);
+      $("prcL").querySelectorAll(".prcrow").forEach(r => r.hidden = !!t && !r.dataset.t.includes(t));
+      $("prcL").querySelectorAll(".prcm").forEach(h => { const card = h.nextElementSibling; const vis = [...card.children].some(r => !r.hidden); h.hidden = card.hidden = !vis; }); };
+    $("prcGo").onclick = async () => { if (!sel.size) return; needEditUI(async () => {
+      $("prcGo").classList.add("busy"); $("prcGo").textContent = "Ajout en cours…";
+      const four = await ensurePrc(); let n = 0;
+      try {
+        for (const i of sel) { const x = L[i], d = prcDose(x), p = {n: x.full, c: x.c, a: x.a, b: x.b, cap: x.cl, d, st: 0, m: 1, u: "cl", al: x.c === "Bière" ? ["gluten"] : []};
+          p.s = x.b ? suggest(pcost(p, d), !!x.a, x.c === "Bière" ? (S.target2 ?? 65) : S.target) : 0;
+          if (four) p.f = four.id;
+          await actSaveProduct(null, p); n++; }
+        save(); closeSheet(); render(); toast(`${n} produit${n > 1 ? "s" : ""} Paris Rhum Club ajouté${n > 1 ? "s" : ""} ✓`);
+      } catch (e) { $("prcGo").classList.remove("busy"); upd(); if (isLock(e)) lockSheet(); else toast(frErr(e) + (n ? ` (${n} ajoutés)` : "")); }
+    }); };
+  });
+}
+function needEditUI(fn) { if (!canEdit()) return lockSheet(); return fn(); }
 function renderMenu() {
+  if ($("prcBtn")) { $("prcBtn").hidden = !(menuKind === "p" && !isBarman() && (window.CATALOGUE_PRC || []).length); $("prcBtn").onclick = prcSheet; }
   const segC = $("menuSeg").querySelector('[data-v="c"]');
   if (restoOn() && !segC) { const b = document.createElement("button"); b.dataset.v = "c"; b.textContent = "Cuisine"; $("menuSeg").appendChild(b); armSeg(); }
   if (!restoOn() && segC) { segC.remove(); if (menuKind === "c") menuKind = "p"; armSeg(); }
@@ -1622,7 +1667,7 @@ function fourSheet(id) {
     <div class="field"><label>Ce que vous lui achetez</label><div class="algs" id="foP">${all.map(([v, n, other]) => `<button type="button" class="chip ${sel.has(v) ? "on" : ""}" data-v="${esc(v)}" title="${other ? "Actuellement chez " + esc(other.n) : ""}">${esc(n)}</button>`).join("") || `<span class="tip">Ajoutez d'abord des produits.</span>`}</div></div>
     <button class="btn" id="foSave">Enregistrer</button>${id ? `<div class="gap"></div><button class="btn danger" id="foDel">Supprimer ce fournisseur</button>` : ""}`, () => {
     $("foP").querySelectorAll("[data-v]").forEach(b => b.onclick = () => { b.classList.toggle("on"); sel[b.classList.contains("on") ? "add" : "delete"](b.dataset.v); });
-    $("foSave").onclick = async () => { const x = {n: $("foN").value.trim(), contact: $("foC").value.trim(), email: $("foE").value.trim(), tel: $("foT").value.trim(), jours: $("foJ").value.trim()};
+    $("foSave").onclick = async () => { const x = {...(f.prc ? {prc: true, site: f.site || ""} : {}), n: $("foN").value.trim(), contact: $("foC").value.trim(), email: $("foE").value.trim(), tel: $("foT").value.trim(), jours: $("foJ").value.trim()};
       if (!x.n) return toast("Donnez un nom au fournisseur");
       $("foSave").classList.add("busy");
       const ok = await act(async () => { const fid = await actSaveFour(id, x);
@@ -2309,7 +2354,7 @@ async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
   S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom; liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir";
-  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home"); if (!isBarman()) aboRetour();
+  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home"); if (!isBarman()) { aboRetour(); ensurePrc(); }
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
 }

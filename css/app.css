@@ -406,3 +406,14 @@ nav button.svcbtn .dot svg{width:20px;height:20px}
   .sheet .grab{display:none}
   .tiles{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
 }
+
+/* Catalogue du fournisseur partenaire (Paris Rhum Club) */
+.prcbtn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,var(--card));color:var(--txt)}
+.prcbtn img{flex:none;border-radius:8px}
+.prcbtn>span:not(.go){flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.prcbtn b{font-size:14.5px}.prcbtn small{font-size:12px;color:var(--mut);line-height:1.35}
+.prcbtn .go{flex:none;font-weight:700;font-size:13px;color:var(--amber2)}
+.prcrow{cursor:pointer;align-items:center}
+.prcrow input{flex:none;width:20px;height:20px;accent-color:var(--amber)}
+.prcrow.dim{opacity:.55;cursor:default}
+.prcbar{position:sticky;bottom:-24px;padding:12px 0 6px;background:linear-gradient(to top,var(--bg2,var(--bg)) 70%,transparent)}
