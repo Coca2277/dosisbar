@@ -1910,11 +1910,19 @@ async function aboRetour() {
   if (!/[?&]abonnement=retour/.test(location.search)) return;
   history.replaceState(null, "", location.pathname);
   toast("Merci ! Confirmation du paiement en cours…");
-  for (let i = 0; i < 6; i++) { await new Promise(r => setTimeout(r, 2500)); await aboRefresh();
-    if (S.abo && S.abo.statut === "actif") { toast("Abonnement actif ✓"); render(); return; } }
-  try { const last = await q(sb.from("paiements").select("statut").eq("etab_id", ETAB.id).order("le", {ascending: false}).limit(1).maybeSingle());
-    if (last && /failed|canceled|expired/.test(last.statut)) return toast(last.statut === "canceled" ? "Paiement annulé : rien n'a été prélevé" : "Paiement refusé par la banque : rien n'a été prélevé. Réessayez ou utilisez une autre carte"); } catch (e) {}
-  toast("Paiement en cours de validation : il apparaîtra dans quelques minutes");
+  // Statut lu directement chez Mollie à chaque essai (le webhook peut arriver après le retour du client)
+  let st = null;
+  for (let i = 0; i < 12; i++) {
+    try { st = await aboCall({action: "verifier"}); } catch (e) { st = null; }
+    if (st && st.statut === "paid") { await new Promise(r => setTimeout(r, 1500)); await aboRefresh(); toast("Paiement accepté, abonnement actif ✓"); render(); return; }
+    if (st && /failed|canceled|expired/.test(st.statut)) { await aboRefresh(); render();
+      return toast(st.statut === "canceled" ? "Paiement annulé : rien n'a été prélevé"
+        : st.statut === "expired" ? "Paiement non finalisé à temps : rien n'a été prélevé. Vous pouvez recommencer"
+        : "Paiement refusé par la banque" + (st.echec ? " (" + st.echec + ")" : "") + " : rien n'a été prélevé. Réessayez ou utilisez une autre carte"); }
+    await new Promise(r => setTimeout(r, 2500));
+  }
+  await aboRefresh(); render();
+  toast("Votre banque n'a pas encore confirmé le paiement : il apparaîtra ici dès sa confirmation");
 }
 
 /* ================= Pertes et offerts ================= */

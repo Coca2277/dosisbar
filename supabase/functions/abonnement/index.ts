@@ -81,6 +81,21 @@ Deno.serve(async (req) => {
       return json({ url: p._links.checkout.href });
     }
 
+    if (b.action === "verifier") {
+      // Retour de la page de paiement : on lit le statut directement chez Mollie (sans attendre le webhook)
+      if (!ab.mollie_client) return json({ statut: "aucun" });
+      const list = await mollie(`/customers/${ab.mollie_client}/payments?limit=1`);
+      const p = list?._embedded?.payments?.[0];
+      if (!p) return json({ statut: "aucun" });
+      if (["paid", "failed", "canceled", "expired"].includes(p.status)) {
+        // statut définitif : on rejoue le traitement du webhook (idempotent) au cas où Mollie ne l'aurait pas encore appelé
+        const fd = new FormData(); fd.set("id", p.id);
+        try { await fetch(url + "/functions/v1/mollie-webhook", { method: "POST", body: fd }); } catch (_) { /* le webhook Mollie prendra le relais */ }
+      }
+      const echec = p.details?.failureReason || p.details?.failureMessage || "";
+      return json({ statut: p.status, id: p.id, echec, cree: p.createdAt });
+    }
+
     if (b.action === "changer") {
       if (!ab.mollie_abonnement || ab.statut !== "actif") return json({ error: "Aucun abonnement actif à modifier" }, 400);
       const formule = String(b.formule);
