@@ -2004,6 +2004,7 @@ function settingsSheet() {
     ? `<div class="lbl"><span>Équipe</span></div><div class="card list" id="team"><div class="empty">Chargement…</div></div>
        <div class="two"><button class="btn ghost" id="invB">Inviter un barman</button><button class="btn ghost" id="invP">Inviter un associé</button></div>
        <div class="lbl"><span>Compte</span></div><div class="card list"><div class="row"><div class="grow"><div class="name">${esc(ME.email)}</div><div class="meta">Patron · ${esc(ETAB.nom)}</div></div></div></div>
+       ${compteBtns()}
        <button class="btn ghost" id="swEtab">Changer d'établissement ou rejoindre</button><div class="gap"></div>
        <button class="btn danger" id="logout">Se déconnecter</button>`
     : (CLOUD ? `<div class="card" style="margin-top:16px"><div class="name">Sauvegardez votre carte en ligne</div><p class="tip" style="margin:4px 0 12px">Pour la retrouver sur tous vos appareils et la partager avec votre équipe.</p><button class="btn" id="goAcc">Créer un compte ou se connecter</button></div>` : "")
@@ -2031,7 +2032,7 @@ function settingsSheet() {
       loadTeam();
       $("invB").onclick = () => invite("barman"); $("invP").onclick = () => invite("patron");
       $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); };
-      $("logout").onclick = logout;
+      $("logout").onclick = logout; compteArm();
     } else {
       if ($("goAcc")) $("goAcc").onclick = () => { closeSheet(); showAuth("login"); };
       armBtn($("sReset"), "Toucher encore : tout sera effacé", () => { const bar = S.bar; S = seed(); S.bar = bar; save(); closeSheet(); go("home"); toast("Données d'exemple restaurées"); });
@@ -2061,12 +2062,100 @@ async function invite(role) {
 function accountSheet() {
   openSheet(`<h2 class="h">Mon compte</h2><div class="sub">${esc(ME.email)}</div>
     <div class="card list"><div class="row"><div class="grow"><div class="name">${esc(ETAB.nom)}</div><div class="meta">Vous êtes barman : mode Service uniquement</div></div></div></div>
+    ${compteBtns()}
     <button class="btn ghost" id="swEtab">Changer d'établissement ou rejoindre</button><div class="gap"></div>
     <button class="btn danger" id="logout">Se déconnecter</button>${avisBtns()}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
     armAvis();
-    $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); }; $("logout").onclick = logout; });
+    $("swEtab").onclick = () => { closeSheet(); showAuth("etab"); }; $("logout").onclick = logout; compteArm(); });
 }
 $("setBtn").onclick = settingsSheet;
+
+/* ================= Mon compte : email, mot de passe, export, quitter, suppression ================= */
+function compteBtns() {
+  return `<div class="two"><button class="btn ghost" id="cEmail">Changer d'email</button><button class="btn ghost" id="cPass">Changer de mot de passe</button></div>
+    <button class="btn ghost" id="cExp" style="margin-top:10px">Télécharger mes données</button>
+    <button class="link" id="cDanger" style="padding:12px 0 14px;color:var(--mut)">Quitter ou supprimer…</button>`;
+}
+function compteArm() {
+  $("cEmail").onclick = emailSheet; $("cPass").onclick = passSheet; $("cExp").onclick = exportData; $("cDanger").onclick = dangerSheet;
+}
+function emailSheet() {
+  openSheet(`<h2 class="h">Changer d'email</h2><div class="sub">Adresse actuelle : ${esc(ME.email)}</div>
+    <div class="field"><label for="neMail">Nouvelle adresse email</label><input id="neMail" type="email" autocomplete="email" placeholder="nom@exemple.fr"></div>
+    <p class="tip" style="margin:-4px 0 12px">Un email de confirmation part vers la nouvelle adresse${" "}(et, par sécurité, vers l'actuelle). Le changement se fait quand vous cliquez sur le lien.</p>
+    <button class="btn" id="neGo">Envoyer la confirmation</button>`, () => {
+    $("neGo").onclick = async () => { const v = $("neMail").value.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { toast("Indiquez une adresse email valide"); return $("neMail").focus(); }
+      if (v === (ME.email || "").toLowerCase()) return toast("C'est déjà votre adresse");
+      $("neGo").classList.add("busy");
+      const {error} = await sb.auth.updateUser({email: v}, {emailRedirectTo: location.origin + location.pathname});
+      if (error) { $("neGo").classList.remove("busy"); return toast(frErr(error)); }
+      openSheet(`<h2 class="h">Vérifiez vos emails</h2><div class="sub">Un lien de confirmation a été envoyé à <b>${esc(v)}</b>.</div>
+        <p class="tip">Cliquez sur le lien reçu (pensez aux courriers indésirables). Si un email arrive aussi sur ${esc(ME.email)}, confirmez-le également. Votre adresse change ensuite partout, y compris dans votre équipe.</p>
+        <button class="btn" id="neOk">Compris</button>`, () => $("neOk").onclick = closeSheet); };
+  });
+}
+function passSheet() {
+  openSheet(`<h2 class="h">Changer de mot de passe</h2><div class="sub">${esc(ME.email)}</div>
+    <div class="field"><label for="npA">Nouveau mot de passe (8 caractères minimum)</label><input id="npA" type="password" autocomplete="new-password" minlength="8"></div>
+    <div class="field"><label for="npB">Retapez-le</label><input id="npB" type="password" autocomplete="new-password" minlength="8"></div>
+    <button class="btn" id="npGo">Enregistrer le mot de passe</button>`, () => {
+    $("npGo").onclick = async () => { const a = $("npA").value, b = $("npB").value;
+      if (a.length < 8) { toast("8 caractères minimum"); return $("npA").focus(); }
+      if (a !== b) { toast("Les deux mots de passe sont différents"); return $("npB").focus(); }
+      $("npGo").classList.add("busy");
+      const {error} = await sb.auth.updateUser({password: a});
+      if (error) { $("npGo").classList.remove("busy"); return toast(frErr(error)); }
+      closeSheet(); toast("Mot de passe changé ✓"); };
+  });
+}
+async function exportData() {
+  const b = $("cExp"); if (b) b.classList.add("busy");
+  const out = {export: "Dosis Bar", date: new Date().toISOString(), compte: {email: ME.email}, etablissement: {id: ETAB.id, nom: ETAB.nom, role: ETAB.role}};
+  try {
+    if (!isBarman()) {
+      const T = ["produits", "produit_formats", "cocktails", "services", "ventes", "inventaires", "pertes", "cuisine", "fournisseurs", "commandes", "stock_releves", "etab_charges", "abonnements", "paiements", "caisse_connexions"];
+      out.etablissement.reglages = (await q(sb.from("etablissements").select("*").eq("id", ETAB.id).maybeSingle())) || null;
+      out.equipe = await q(sb.from("membres").select("email,role,depuis").eq("etab_id", ETAB.id)).catch(() => []);
+      for (const t of T) { try { out[t] = await q(sb.from(t).select("*").eq("etab_id", ETAB.id).limit(50000)); } catch (e) { out[t] = {erreur: frErr(e)}; } }
+      try { const ids = (out.cocktails || []).map(c => c.id); out.cocktail_ingredients = ids.length ? await q(sb.from("cocktail_ingredients").select("*").in("cocktail_id", ids)) : []; } catch (e) {}
+      try { out.factures = await q(sb.from("factures").select("numero,emise_le,payee_le,client,lignes,total_ht,tva,total_ttc").eq("etab_id", ETAB.id)); } catch (e) {}
+    }
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type: "application/json"}), u = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = u; a.download = `dosis-bar-${(ETAB.nom || "donnees").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
+    toast("Données téléchargées ✓");
+  } catch (e) { toast(frErr(e)); }
+  if (b) b.classList.remove("busy");
+}
+async function compteCall(body) {
+  const {data, error} = await sb.functions.invoke("compte", {body});
+  if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch (e) {} throw new Error(m); }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+function dangerSheet() {
+  const patron = !isBarman();
+  openSheet(`<h2 class="h">Quitter ou supprimer</h2><div class="sub">Avant de supprimer, pensez à télécharger vos données.</div>
+    <div class="card"><div class="name">Quitter ${esc(ETAB.nom)}</div><div class="meta" style="white-space:normal;margin-top:4px">Vous perdez l'accès à cet établissement. Ses données restent pour l'équipe.${patron ? " Possible seulement s'il reste un autre patron." : ""}</div>
+      <button class="btn ghost" id="dQuit" style="margin-top:10px">Quitter l'établissement</button></div>
+    ${patron ? `<div class="card"><div class="name" style="color:var(--bad)">Supprimer l'établissement</div><div class="meta" style="white-space:normal;margin-top:4px">Efface définitivement la carte, les ventes, le stock, la cuisine, les fournisseurs et l'équipe de ${esc(ETAB.nom)}. L'abonnement est arrêté. Les factures déjà émises sont conservées 10 ans, comme la loi l'exige.</div>
+      <div class="field" style="margin-top:10px"><label for="dEtN">Pour confirmer, tapez le nom : <b>${esc(ETAB.nom)}</b></label><input id="dEtN" autocomplete="off"></div>
+      <button class="btn danger" id="dEtab">Supprimer l'établissement</button></div>` : ""}
+    <div class="card"><div class="name" style="color:var(--bad)">Supprimer mon compte</div><div class="meta" style="white-space:normal;margin-top:4px">Efface votre compte et votre adresse email. Les établissements dont vous êtes le seul patron sont supprimés aussi, et leur abonnement est arrêté.</div>
+      <div class="field" style="margin-top:10px"><label for="dAcN">Pour confirmer, tapez <b>SUPPRIMER</b></label><input id="dAcN" autocomplete="off" autocapitalize="characters"></div>
+      <button class="btn danger" id="dAcc">Supprimer mon compte</button></div>`, () => {
+    $("dQuit").onclick = async () => { const b = $("dQuit"); if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = "Confirmer : quitter " + ETAB.nom; return; } b.classList.add("busy");
+      try { await q(sb.rpc("quitter_etab", {p_etab: ETAB.id})); closeSheet(); localStorage.removeItem(EKEY); toast("Vous avez quitté " + ETAB.nom); showAuth("etab"); } catch (e) { b.classList.remove("busy"); toast(frErr(e)); } };
+    if ($("dEtab")) $("dEtab").onclick = async () => { if ($("dEtN").value.trim().toLowerCase() !== (ETAB.nom || "").trim().toLowerCase()) { toast("Tapez exactement le nom de l'établissement"); return $("dEtN").focus(); }
+      $("dEtab").classList.add("busy");
+      try { await compteCall({action: "supprimer_etab", etab: ETAB.id}); closeSheet(); localStorage.removeItem(EKEY); toast("Établissement supprimé"); showAuth("etab"); } catch (e) { $("dEtab").classList.remove("busy"); toast(frErr(e)); } };
+    $("dAcc").onclick = async () => { if ($("dAcN").value.trim().toUpperCase() !== "SUPPRIMER") { toast("Tapez SUPPRIMER pour confirmer"); return $("dAcN").focus(); }
+      $("dAcc").classList.add("busy");
+      try { await compteCall({action: "supprimer_compte"}); closeSheet(); try { await sb.auth.signOut(); } catch (e) {} localStorage.removeItem(EKEY); localStorage.removeItem(MKEY); toast("Compte supprimé. Merci d'avoir utilisé Dosis Bar"); setTimeout(() => location.reload(), 1500); }
+      catch (e) { $("dAcc").classList.remove("busy"); toast(frErr(e)); } };
+  });
+}
 
 /* ================= Avis des testeurs ================= */
 let IS_ADMIN = false;
