@@ -119,7 +119,11 @@ Deno.serve(async (req) => {
     });
 
     if (p.sequenceType === "first") {
-      if (p.status === "paid" && !(ab?.mollie_abonnement)) {
+      if (p.status === "paid" && (!(ab?.mollie_abonnement) || ab?.statut !== "actif")) {
+        // Nouveau moyen de paiement après un impayé ou une résiliation : on remplace l'ancien abonnement Mollie
+        if (ab?.mollie_abonnement && ab?.mollie_client) {
+          try { await mollie(`/customers/${ab.mollie_client}/subscriptions/${ab.mollie_abonnement}`, "DELETE"); } catch (_) { /* déjà annulé */ }
+        }
         const formule = String(p.metadata.formule), resto = !!p.metadata.resto, ttc = +p.metadata.ttc;
         const debut = plusMois(new Date(), formule === "pilote" ? 2 : 1);
         const s = await mollie(`/customers/${p.customerId}/subscriptions`, "POST", {

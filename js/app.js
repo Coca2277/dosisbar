@@ -2366,7 +2366,8 @@ async function chooseEtab(e) {
   ETAB = {id: e.id, nom: e.nom, role: e.role}; lsSet(EKEY, ETAB);
   MODE = "cloud"; lsSet(MKEY, "cloud");
   S = Object.assign(emptyState(), lsGet(CKEY + "." + e.id) || {}); S.bar = e.nom; liveNorm(); S.zone = lsGet("dosisbar.zone") || "comptoir";
-  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home"); if (!isBarman()) { aboRetour(); ensurePrc(); }
+  hideAuth(); closeSheet(); checkAdmin(); releveDone = false; setSync("ok"); go(isBarman() ? "service" : "home"); if (!isBarman()) { aboRetour(); ensurePrc();
+    if (/[?&]ouvrir=abonnement/.test(location.search)) { history.replaceState(null, "", location.pathname); setTimeout(aboSheet, 400); } }
   try { await loadCloud(); render(); } catch (err) { toast(frErr(err)); setSync(isNetErr(err) ? "off" : "err"); }
   flush(); startPoll();
 }
