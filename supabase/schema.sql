@@ -1175,3 +1175,5 @@ select cron.unschedule('dosis-emails') where exists (select 1 from cron.job wher
 select cron.schedule('dosis-emails', '17 * * * *',
   $c$ select net.http_post(url := 'https://zksoxdoqfabbhzwyymbp.supabase.co/functions/v1/emails',
        headers := '{"Content-Type":"application/json"}'::jsonb, body := '{}'::jsonb) $c$);
+-- Migration 16 : paiement à l'année (2 mois offerts)
+alter table public.abonnements add column if not exists annuel boolean not null default false;

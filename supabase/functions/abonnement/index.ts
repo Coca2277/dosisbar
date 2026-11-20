@@ -3,8 +3,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const APP = "https://dosisbar.com/app.html";
-const PRIX_HT: Record<string, number> = { pilote: 29.99, bar: 49, pro: 79 };
-const RESTO_HT = 20;
+const PRIX_HT: Record<string, number> = { pilote: 19, bar: 29, pro: 59 };
+const RESTO_HT = 15;
+const MOIS_PAR_AN = 10; // paiement à l'année : 12 mois pour le prix de 10
 const NOMS: Record<string, string> = { pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro" };
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -59,7 +60,9 @@ Deno.serve(async (req) => {
       }
       if (ab.statut === "actif" && ab.mollie_abonnement) return json({ error: "Un abonnement est déjà actif : utilisez « Changer de formule »" }, 400);
       const resto = !!b.resto && formule !== "pro";
+      const annuel = !!b.annuel && formule !== "pilote";
       const t = tarif(formule, resto);
+      const periode = annuel ? Math.round(t.ttc * MOIS_PAR_AN * 100) / 100 : t.ttc;
       let client = ab.mollie_client;
       if (!client) {
         const c = await mollie("/customers", "POST", { name: et?.nom || "Établissement", email: u.user.email, metadata: { etab } });
@@ -67,16 +70,16 @@ Deno.serve(async (req) => {
       }
       const essai = formule === "pilote";
       const p = await mollie(`/customers/${client}/payments`, "POST", {
-        amount: { currency: "EUR", value: essai ? "1.00" : euros(t.ttc) },
-        description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – 1er mois`,
+        amount: { currency: "EUR", value: essai ? "1.00" : euros(periode) },
+        description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${annuel ? "1re année" : "1er mois"}`,
         sequenceType: "first",
         redirectUrl: APP + "?abonnement=retour",
         webhookUrl: url + "/functions/v1/mollie-webhook",
-        metadata: { etab, formule, resto, ttc: t.ttc },
+        metadata: { etab, formule, resto, annuel, ttc: periode },
       });
       await admin.from("abonnements").upsert({
         etab_id: etab, formule, resto, statut: ab.statut === "actif" ? "actif" : "en_attente",
-        montant_ttc: t.ttc, mollie_client: client, maj: new Date().toISOString(),
+        montant_ttc: periode, annuel, mollie_client: client, maj: new Date().toISOString(),
       });
       return json({ url: p._links.checkout.href });
     }
@@ -102,11 +105,12 @@ Deno.serve(async (req) => {
       if (!PRIX_HT[formule] || formule === "pilote") return json({ error: "Formule non disponible" }, 400);
       const resto = !!b.resto && formule !== "pro";
       const t = tarif(formule, resto);
+      const periode = ab.annuel ? Math.round(t.ttc * MOIS_PAR_AN * 100) / 100 : t.ttc;
       await mollie(`/customers/${ab.mollie_client}/subscriptions/${ab.mollie_abonnement}`, "PATCH", {
-        amount: { currency: "EUR", value: euros(t.ttc) },
+        amount: { currency: "EUR", value: euros(periode) },
         description: `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${etab.slice(0, 8)}`,
       });
-      await admin.from("abonnements").update({ formule, resto, montant_ttc: t.ttc, maj: new Date().toISOString() }).eq("etab_id", etab);
+      await admin.from("abonnements").update({ formule, resto, montant_ttc: periode, maj: new Date().toISOString() }).eq("etab_id", etab);
       return json({ ok: true });
     }
 

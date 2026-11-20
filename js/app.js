@@ -1464,7 +1464,7 @@ function platSheet(id) {
 const METIERS = [["bar","Bar"],["bar-resto","Bar-restaurant"],["resto","Restaurant"],["fastfood","Restauration rapide"],["traiteur","Traiteur"]];
 function restoSheet() {
   if (!restoAllowed()) return openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations, coût de l'assiette et allergènes, dans la même app que votre bar.</div>
-    <div class="card"><div class="name">+ 20 € HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
+    <div class="card"><div class="name">+ 15 € HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
     <button class="btn" id="roAbo">Ajouter Dosis Resto à mon abonnement</button>`, () => { $("roAbo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
   const r = Object.assign({on: false, metier: "bar-resto", target: 70}, S.resto || {});
   openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
@@ -1778,7 +1778,7 @@ async function bilanSheet(off = 0) {
 }
 
 /* ================= Abonnement (Mollie) ================= */
-const ABO_HT = {pilote: 29.99, bar: 49, pro: 79}, ABO_RESTO = 20;
+const ABO_HT = {pilote: 19, bar: 29, pro: 59}, ABO_RESTO = 15, ABO_MOIS_AN = 10;
 const ABO_NOMS = {pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro"};
 const ABO_ST = {aucun: ["Pas d'abonnement", ""], en_attente: ["Paiement en attente", "b-warn"], actif: ["Actif", "b-ok"], impaye: ["Paiement refusé", "b-bad"], annule: ["Résilié", "b-warn"]};
 const aboHT = (f, r) => ABO_HT[f] + (r && f !== "pro" ? ABO_RESTO : 0);
@@ -1852,18 +1852,19 @@ async function aboRefresh() { if (!cloud()) return; accRefresh(); try { S.abo = 
 function aboSheet() {
   if (MODE !== "cloud") return toast("Créez votre compte pour vous abonner");
   const a = S.abo || {statut: "aucun"}, actif = a.statut === "actif", st = ABO_ST[a.statut] || ABO_ST.aucun;
-  let f = actif ? a.formule : "bar", r = actif ? !!a.resto : restoOn();
+  let f = actif ? a.formule : "bar", r = actif ? !!a.resto : restoOn(), an = actif ? !!a.annuel : false;
   const fx = (S.opts && S.opts.facturation) || {};
   const card = (k, desc) => `<button type="button" class="abo ${f === k ? "on" : ""}" data-f="${k}" ${actif && k === "pilote" && a.formule !== "pilote" ? "disabled" : ""}>
       <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eur(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
   openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement SEPA. Sans engagement, résiliable à tout moment.</div>
     ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Dosis Resto" : "") : "Abonnement"}</div>
-      <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + " TTC / mois" : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
+      <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + (a.annuel ? " TTC / an" : " TTC / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
     <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
     <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Dosis Resto inclus. Factures et caisse connectée bientôt.")}</div>
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
+    <div class="seg" id="abPer" style="margin:2px 0 12px"><button type="button" data-p="m" class="${an ? "" : "on"}">Au mois</button><button type="button" data-p="a" class="${an ? "on" : ""}">À l'année · 2 mois offerts</button></div>
     <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
-    <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
+    <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l" id="abPerL">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
     <div class="lbl"><span>Informations de facturation</span></div>
     <div class="field"><label for="fxNom">Raison sociale</label><input id="fxNom" maxlength="120" value="${esc(fx.nom || ETAB.nom || "")}" placeholder="Nom de la société ou de l'entreprise"></div>
     <div class="field"><label for="fxAdr">Adresse</label><input id="fxAdr" maxlength="200" value="${esc(fx.adresse || "")}" placeholder="N°, rue, code postal, ville" autocomplete="street-address"></div>
@@ -1871,7 +1872,7 @@ function aboSheet() {
     <div class="field"><label for="fxTva">N° de TVA intracommunautaire <small>(facultatif)</small></label><input id="fxTva" maxlength="20" autocapitalize="characters" value="${esc(fx.tva || "")}"></div>
     <div class="field"><label for="fxMail">Email qui reçoit les factures</label><input id="fxMail" type="email" maxlength="120" value="${esc(fx.email || (ME && ME.email) || "")}"></div>
     ${actif ? `<button class="btn ghost" id="fxSave" style="margin-bottom:14px">Enregistrer la facturation</button>` : ""}
-    ${actif ? "" : `<label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45;margin:4px 0 12px"><input type="checkbox" id="abCgv" style="margin-top:1px;flex:none"> <span>J'accepte les <a href="cgv.html" target="_blank" style="color:var(--amber2)">conditions générales de vente</a> : abonnement mensuel sans engagement, mois commencé non remboursé.</span></label>`}
+    ${actif ? "" : `<label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45;margin:4px 0 12px"><input type="checkbox" id="abCgv" style="margin-top:1px;flex:none"> <span>J'accepte les <a href="cgv.html" target="_blank" style="color:var(--amber2)">conditions générales de vente</a> : abonnement sans engagement, période commencée non remboursée.</span></label>`}
     <button class="btn" id="abGo"></button>
     ${actif || a.statut === "impaye" ? `<div class="gap"></div><button class="btn danger" id="abStop">Résilier l'abonnement</button>` : ""}
     <p class="tip">Le paiement se fait sur la page sécurisée de Mollie : Dosis Bar ne voit jamais vos coordonnées bancaires.</p>
@@ -1887,12 +1888,15 @@ function aboSheet() {
     }).catch(() => { $("abFacts").textContent = "Factures indisponibles pour le moment."; });
     const upd = () => { document.querySelectorAll(".abo").forEach(b => b.classList.toggle("on", b.dataset.f === f));
       $("abCodeF").hidden = !(f === "pilote" && !actif); $("abRestoF").hidden = f === "pro"; r = $("abResto").checked;
-      const ht = aboHT(f, r); $("abHT").textContent = eur(ht) + " HT"; $("abTTC").textContent = eur(Math.round(ht * 120) / 100);
-      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
+      $("abPer").hidden = f === "pilote" || actif; if (f === "pilote") an = false;
+      $("abPer").querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.p === "a") === an));
+      const ht = aboHT(f, r) * (an ? ABO_MOIS_AN : 1); $("abPerL").textContent = an ? "Par an" : "Par mois";
+      $("abHT").textContent = eur(ht) + " HT"; $("abTTC").textContent = eur(Math.round(ht * 120) / 100);
+      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : an ? `12 mois pour le prix de 10 : vous économisez ${eur(aboHT(f, r) * 2)} HT. Payé aujourd'hui, puis chaque année automatiquement.` : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
       $("abGo").textContent = actif ? (f === a.formule && r === !!a.resto ? "Formule actuelle" : "Changer de formule") : "Continuer vers le paiement";
       $("abGo").disabled = actif && f === a.formule && r === !!a.resto; };
     document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });
-    $("abResto").onchange = upd; upd();
+    $("abResto").onchange = upd; $("abPer").querySelectorAll("button").forEach(b => b.onclick = () => { an = b.dataset.p === "a"; upd(); }); upd();
     $("abGo").onclick = async () => { if (!navigator.onLine) return toast("Connexion internet nécessaire");
       const fxv = fxRead(); if (!actif && !fxCheck(fxv)) return;
       if (!actif && !$("abCgv").checked) { toast("Acceptez d'abord les conditions générales de vente"); return $("abCgv").focus(); }
@@ -1900,7 +1904,7 @@ function aboSheet() {
       $("abGo").classList.add("busy");
       try {
         if (actif) { await aboCall({action: "changer", formule: f, resto: r}); await aboRefresh(); closeSheet(); toast("Formule modifiée ✓"); }
-        else { await actOpts({facturation: fxv}); const d = await aboCall({action: "souscrire", formule: f, resto: r, code: $("abCode").value}); location.href = d.url; }
+        else { await actOpts({facturation: fxv}); const d = await aboCall({action: "souscrire", formule: f, resto: r, annuel: an, code: $("abCode").value}); location.href = d.url; }
       } catch (e) { toast(frErr(e)); $("abGo").classList.remove("busy"); } };
     if ($("abStop")) armBtn($("abStop"), "Toucher encore pour résilier", async () => {
       try { await aboCall({action: "resilier"}); await aboRefresh(); closeSheet(); toast("Abonnement résilié"); } catch (e) { toast(frErr(e)); } });

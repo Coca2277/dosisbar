@@ -70,13 +70,13 @@ async function facturer(admin: any, p: any, etab: string, ab: Record<string, unk
   };
   const formule = String(p.metadata?.formule || ab?.formule || "bar");
   const resto = p.metadata?.resto ?? ab?.resto;
-  const nom = `Abonnement ${NOMS[formule] || "Dosis Bar"}${resto && formule !== "pro" ? " + Dosis Resto" : ""}`;
+  const nom = `Abonnement ${(p.metadata?.annuel ?? ab?.annuel) ? "annuel " : ""}${NOMS[formule] || "Dosis Bar"}${resto && formule !== "pro" ? " + Dosis Resto" : ""}`;
   const payee = new Date(p.paidAt || Date.now());
   const verif = p.sequenceType === "first" && formule === "pilote";
   const ht = Math.round((ttc / 1.2) * 100) / 100, tva = Math.round((ttc - ht) * 100) / 100;
   const lignes: Ligne[] = [{
     designation: verif ? "Validation du moyen de paiement – offre pilote" : nom,
-    detail: verif ? "Les 2 premiers mois de l'offre pilote sont offerts" : `Période du ${jour(payee)} au ${jour(plusMois(payee, 1))}`,
+    detail: verif ? "Les 2 premiers mois de l'offre pilote sont offerts" : `Période du ${jour(payee)} au ${jour(plusMois(payee, (p.metadata?.annuel ?? ab?.annuel) ? 12 : 1))}`,
     qte: 1, pu_ht: ht,
   }];
   const { data: f, error } = await admin.rpc("emettre_facture", {
@@ -124,15 +124,15 @@ Deno.serve(async (req) => {
         if (ab?.mollie_abonnement && ab?.mollie_client) {
           try { await mollie(`/customers/${ab.mollie_client}/subscriptions/${ab.mollie_abonnement}`, "DELETE"); } catch (_) { /* déjà annulé */ }
         }
-        const formule = String(p.metadata.formule), resto = !!p.metadata.resto, ttc = +p.metadata.ttc;
-        const debut = plusMois(new Date(), formule === "pilote" ? 2 : 1);
+        const formule = String(p.metadata.formule), resto = !!p.metadata.resto, ttc = +p.metadata.ttc, annuel = !!p.metadata.annuel;
+        const debut = plusMois(new Date(), formule === "pilote" ? 2 : annuel ? 12 : 1);
         const s = await mollie(`/customers/${p.customerId}/subscriptions`, "POST", {
-          amount: { currency: "EUR", value: euros(ttc) }, interval: "1 month", startDate: iso(debut),
+          amount: { currency: "EUR", value: euros(ttc) }, interval: annuel ? "12 months" : "1 month", startDate: iso(debut),
           description: `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${etab.slice(0, 8)}`,
           webhookUrl: url + "/functions/v1/mollie-webhook", metadata: { etab },
         });
         await admin.from("abonnements").upsert({
-          etab_id: etab, formule, resto, statut: "actif", montant_ttc: ttc, paye_jusqu: iso(debut),
+          etab_id: etab, formule, resto, annuel, statut: "actif", montant_ttc: ttc, paye_jusqu: iso(debut),
           mollie_client: p.customerId, mollie_abonnement: s.id, maj: new Date().toISOString(),
         });
       } else if (["failed", "canceled", "expired"].includes(p.status) && ab?.statut === "en_attente") {
@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
     } else if (p.subscriptionId) {
       if (p.status === "paid") {
         const base = ab?.paye_jusqu ? new Date(String(ab.paye_jusqu)) : new Date();
-        const fin = plusMois(base < new Date() ? new Date() : base, 1);
+        const fin = plusMois(base < new Date() ? new Date() : base, ab?.annuel ? 12 : 1);
         await admin.from("abonnements").update({ statut: "actif", paye_jusqu: iso(fin), maj: new Date().toISOString() }).eq("etab_id", etab);
       } else if (["failed", "charged_back"].includes(p.status)) {
         await admin.from("abonnements").update({ statut: "impaye", maj: new Date().toISOString() }).eq("etab_id", etab);

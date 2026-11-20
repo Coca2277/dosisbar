@@ -47,7 +47,7 @@ function contenu(r: { type: string; nom: string; fin_essai: string | null; paye_
       sujet: `Votre essai Dosis Bar se termine ${quand}`,
       html: page(`Votre essai se termine ${quand}`,
         `<p>L'essai gratuit de <b>${nom}</b> se termine le <b>${jour(r.fin_essai)}</b>.</p>
-<p>Pour continuer à suivre vos marges, vos stocks et vos services, choisissez votre formule en quelques secondes : <b>Dosis Bar à 29,99 € HT par mois</b>, sans engagement, résiliable à tout moment.</p>
+<p>Pour continuer à suivre vos marges, vos stocks et vos services, choisissez votre formule en quelques secondes : <b>Dosis Bar à 29 € HT par mois</b> (34,80 € TTC), sans engagement, résiliable à tout moment. Ou 2 mois offerts en payant à l'année.</p>
 <p>Sans abonnement, rien n'est perdu : vos données restent enregistrées et consultables, mais vous ne pourrez plus les modifier.</p>`,
         "Choisir ma formule", APP + "?ouvrir=abonnement"),
     };
