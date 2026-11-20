@@ -35,7 +35,7 @@ function contenu(r: { type: string; nom: string; fin_essai: string | null; paye_
 <li style="margin-bottom:6px"><b>Ouvrez le service</b> le soir : vous voyez ce que le bar gagne, en direct.</li>
 <li><b>Faites un premier inventaire</b> : Dosis Bar vous montre ce qui manque dans les bouteilles.</li>
 </ol>
-<p>Vous pouvez inviter votre équipe depuis Réglages › Équipe.</p>`,
+<p>Vous pouvez inviter votre équipe depuis Réglages › Équipe. Et pour tout le reste, le <a href="https://dosisbar.com/guide.html" style="color:#B8741A">guide d'utilisation</a> vous explique chaque écran pas à pas.</p>`,
         "Ouvrir Dosis Bar", APP),
     };
   }

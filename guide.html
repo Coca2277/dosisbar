@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14110F">
+<title>Guide d'utilisation — Dosis Bar</title>
+<meta name="description" content="Comment utiliser Dosis Bar : créer sa carte, suivre le service, faire l'inventaire, inviter son équipe. Le guide pas à pas pour les patrons de bar et de restaurant.">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="stylesheet" href="css/doc.css">
+<style>
+  .intro{font-size:18px;color:var(--txt);max-width:60ch}
+  .som{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px 10px;margin:22px 0 8px}
+  .som ol{margin:0 0 6px 20px;columns:2;column-gap:28px}
+  .som li{margin-bottom:6px;break-inside:avoid}
+  .som a{color:var(--txt);text-decoration:none}
+  .som a:hover{color:var(--amber2)}
+  h2{scroll-margin-top:20px;padding-top:12px;border-top:1px solid var(--line);margin-top:44px}
+  h2 .n{color:var(--amber);margin-right:10px}
+  .ou{display:inline-block;font-size:13px;font-weight:600;color:var(--amber2);background:rgba(232,163,61,.1);border:1px solid rgba(232,163,61,.3);border-radius:999px;padding:2px 10px;margin:0 0 10px}
+  ol.pas{counter-reset:p;list-style:none;margin:8px 0 16px}
+  ol.pas>li{counter-increment:p;position:relative;padding-left:40px;margin-bottom:12px}
+  ol.pas>li::before{content:counter(p);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--amber);color:#1a1208;font-weight:700;font-size:14px;display:grid;place-items:center}
+  .astuce{border-left:3px solid var(--amber);background:var(--card);border-radius:0 12px 12px 0;padding:12px 16px;margin:14px 0}
+  .astuce p{margin:0}
+  .ecran{display:flex;gap:20px;align-items:flex-start;margin:6px 0 10px}
+  .ecran img{flex:none;width:200px;height:auto;border-radius:22px;border:1px solid var(--line);box-shadow:0 18px 40px rgba(0,0,0,.35)}
+  .ecran>div{min-width:0}
+  b.k{font-weight:600;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:0 6px;white-space:nowrap}
+  @media (max-width:620px){.som ol{columns:1}.ecran{flex-direction:column}.ecran img{width:min(240px,70%);align-self:center}}
+</style>
+</head>
+<body>
+<div class="top"><a class="logo" href="./"><img class="lmark" src="icons/logo-bar.svg" width="20" height="23" alt="">Dosis <span>Bar</span></a><a class="back" href="app.html">Ouvrir l'app</a></div>
+
+<h1>Guide d'utilisation</h1>
+<p class="maj">Pour les patrons de bar et de restaurant · mis à jour le 20 novembre 2026</p>
+<p class="intro">Dosis Bar vous dit ce que gagne chaque verre, ce que rapporte chaque soirée et où part votre stock. Ce guide vous accompagne pas à pas, des premières minutes jusqu'au bilan du mois.</p>
+
+<nav class="som" aria-label="Sommaire">
+  <ol>
+    <li><a href="#demarrer">Démarrer en 10 minutes</a></li>
+    <li><a href="#accueil">Lire l'écran d'accueil</a></li>
+    <li><a href="#carte">Créer votre carte</a></li>
+    <li><a href="#service">Suivre le service du soir</a></li>
+    <li><a href="#stock">Stock, inventaire et commandes</a></li>
+    <li><a href="#calculs">Les calculs rapides</a></li>
+    <li><a href="#resto">Dosis Resto : vos plats</a></li>
+    <li><a href="#equipe">Votre équipe</a></li>
+    <li><a href="#reglages">Les réglages utiles</a></li>
+    <li><a href="#abonnement">Votre abonnement</a></li>
+    <li><a href="#questions">Questions fréquentes</a></li>
+  </ol>
+</nav>
+
+<h2 id="demarrer"><span class="n">1</span>Démarrer en 10 minutes</h2>
+<ol class="pas">
+  <li><b>Ouvrez dosisbar.com/app.html</b> sur votre téléphone, votre tablette ou votre ordinateur. Rien à installer.</li>
+  <li><b>Créez votre compte</b> avec votre email. Vous recevez un lien de confirmation : touchez-le, puis connectez-vous.</li>
+  <li><b>Donnez le nom de votre établissement.</b> Votre essai gratuit de 14 jours commence, toutes les fonctions incluses, sans carte bancaire.</li>
+  <li><b>Ajoutez vos 5 produits les plus vendus</b> (voir <a href="#carte">Créer votre carte</a>). Les premiers chiffres s'affichent aussitôt.</li>
+  <li><b>Mettez l'app sur votre écran d'accueil</b> pour l'ouvrir comme une application (voir <a href="#questions">Questions fréquentes</a>).</li>
+</ol>
+<div class="astuce"><p>Vous voulez d'abord regarder ? Touchez <b class="k">Essayer sans compte</b> : l'app s'ouvre avec un bar d'exemple. Rien n'est enregistré en ligne.</p></div>
+
+<h2 id="accueil"><span class="n">2</span>Lire l'écran d'accueil</h2>
+<p class="ou">Onglet Accueil</p>
+<div class="ecran">
+  <img src="img/app-home.webp" width="400" height="866" alt="Écran d'accueil de Dosis Bar avec le Dosis Score et la marge moyenne" loading="lazy">
+  <div>
+    <ul>
+      <li><b>Dosis Score</b> : la santé de votre bar, notée sur 100. Elle combine vos marges par rapport à votre objectif et l'état de votre stock.</li>
+      <li><b>Marge moyenne</b> et <b>Gagné par verre</b> : ce qu'il vous reste en moyenne, une fois l'alcool payé.</li>
+      <li><b>Argent à récupérer</b> : les produits vendus trop bas. Dosis Bar indique le prix conseillé et ce que vous gagneriez par mois en le corrigeant.</li>
+      <li><b>Stock à surveiller</b> : les bouteilles qui vont manquer.</li>
+      <li><b>Pertes et offerts</b> : ce que la casse, les verres offerts et les consommations du personnel vous coûtent ce mois-ci.</li>
+      <li><b>Marge des derniers services</b> : vos dernières soirées, en un coup d'œil.</li>
+    </ul>
+  </div>
+</div>
+<p>Pour régler votre objectif de marge (80 % par défaut pour les spiritueux et cocktails), ouvrez les <a href="#reglages">Réglages</a>.</p>
+
+<h2 id="carte"><span class="n">3</span>Créer votre carte</h2>
+<p class="ou">Onglet Carte</p>
+<h3>Ajouter un produit</h3>
+<ol class="pas">
+  <li>Touchez le bouton rond <b class="k">+</b> en bas de l'écran.</li>
+  <li>Scannez le code-barres de la bouteille avec l'appareil photo, ou tapez son nom.</li>
+  <li>Indiquez le <b>prix d'achat HT</b> de la bouteille et sa <b>contenance</b> (70 cl, 1 L…).</li>
+  <li>Indiquez la <b>dose servie</b> (4 cl par exemple) et votre <b>prix de vente TTC</b>. Dosis Bar calcule le coût du verre, votre marge et vous propose un prix conseillé.</li>
+</ol>
+<div class="astuce"><p>La TVA est appliquée toute seule : 20 % pour l'alcool, 10 % pour les boissons sans alcool. Vous n'avez rien à calculer.</p></div>
+<h3>Les formats de vente</h3>
+<p>Un même produit peut se vendre de plusieurs façons : au verre, en double, à la bouteille entière, en pinte ou en demi. Dans la fiche du produit, ajoutez ses formats avec leur prix : chacun a sa propre marge.</p>
+<h3>Les cocktails et recettes</h3>
+<p>Dans <b class="k">Carte › Recettes</b>, créez un cocktail en choisissant ses ingrédients et leurs doses (rhum, sirop, citron…). Dosis Bar additionne le coût de chaque ingrédient et vous donne la marge réelle du cocktail.</p>
+<h3>Le catalogue Paris Rhum Club</h3>
+<p>En haut de <b class="k">Carte › Produits</b>, le bouton <b class="k">Catalogue Paris Rhum Club</b> ouvre la liste des rhums, liqueurs et bières cubaines de notre fournisseur partenaire. Cochez ce que vous vendez : les produits arrivent dans votre carte déjà remplis, avec leur prix d'achat et un prix de vente conseillé.</p>
+
+<h2 id="service"><span class="n">4</span>Suivre le service du soir</h2>
+<p class="ou">Bouton central Service</p>
+<div class="ecran">
+  <img src="img/app-service.webp" width="400" height="866" alt="Mode Service de Dosis Bar : les produits à toucher à chaque vente" loading="lazy">
+  <div>
+    <p>Trois façons de faire, choisissez celle qui vous convient :</p>
+    <h3>A. Compter au comptoir</h3>
+    <p>Ouvrez le <b>Service</b> et touchez un produit à chaque verre servi. Vous voyez en direct les ventes et la marge de la soirée. En fin de soirée, touchez <b class="k">Clôturer</b> : la soirée est archivée et le stock mis à jour.</p>
+    <h3>B. Importer le fichier de la caisse</h3>
+    <p>Dans le Service, touchez <b class="k">Importer les ventes de la caisse</b> et choisissez le fichier exporté par votre caisse (CSV ou Excel). Dosis Bar relie les noms de la caisse à votre carte.</p>
+    <h3>C. Caisse connectée</h3>
+    <p>Avec une caisse SumUp, connectez-la une fois dans <b class="k">Réglages › Ma caisse enregistreuse</b>, puis touchez <b class="k">Récupérer les ventes</b> : plus aucun fichier à manipuler.</p>
+  </div>
+</div>
+<div class="astuce"><p>Le réseau coupe ? Le service continue. Les ventes sont gardées sur le téléphone et envoyées dès que la connexion revient.</p></div>
+
+<h2 id="stock"><span class="n">5</span>Stock, inventaire et commandes</h2>
+<p class="ou">Onglet Stock</p>
+<h3>Faire l'inventaire</h3>
+<div class="ecran">
+  <img src="img/app-inv.webp" width="400" height="866" alt="Inventaire dans Dosis Bar avec les écarts entre le stock compté et le stock attendu" loading="lazy">
+  <div>
+    <ol class="pas">
+      <li>Touchez <b class="k">Inventaire en scannant les bouteilles</b> (ou <b class="k">Inventaire à la main</b>).</li>
+      <li>Pour chaque produit, indiquez combien de bouteilles il reste. Une bouteille à moitié pleine compte pour 0,5.</li>
+      <li>Touchez <b class="k">Valider l'inventaire</b>.</li>
+    </ol>
+    <p>Dosis Bar compare ce que vous avez compté avec ce qui devrait rester d'après vos ventes. L'écart, en euros, vous montre ce qui est parti sans être encaissé : verres trop servis, oublis, offerts non notés.</p>
+  </div>
+</div>
+<div class="astuce"><p>Faites un inventaire au moins une fois par mois, le même jour, avant l'ouverture. C'est ce qui rend les écarts fiables.</p></div>
+<h3>Noter la casse et les offerts</h3>
+<p>Touchez <b class="k">Noter une casse, un offert ou une perte</b> dès que ça arrive. Ces verres ne comptent plus comme des écarts, et vous voyez ce qu'ils coûtent sur l'accueil.</p>
+<h3>Commander</h3>
+<ul>
+  <li><b>À commander</b> liste les produits sous le seuil. Touchez <b class="k">Préparer les commandes</b> : Dosis Bar prépare une commande par fournisseur, que vous vérifiez puis envoyez par email ou WhatsApp.</li>
+  <li><b class="k">Mes fournisseurs</b> : vos fournisseurs et leurs coordonnées. Paris Rhum Club y est déjà, en fournisseur partenaire.</li>
+  <li><b class="k">+ Achat / facture</b> : notez ce qui est livré. Le stock augmente et votre prix d'achat se met à jour si le tarif a changé.</li>
+</ul>
+
+<h2 id="calculs"><span class="n">6</span>Les calculs rapides</h2>
+<p class="ou">Onglet Calculs</p>
+<ul>
+  <li><b>Un verre</b> : prix de la bouteille, dose, prix de vente → coût, marge et prix conseillé. Pour vérifier un prix avant de l'afficher.</li>
+  <li><b>À la pièce</b> : bière, soda, canette ou bouteille entière achetés au carton → coût à l'unité et marge.</li>
+  <li><b>Surdosage</b> : ce que coûte un barman qui sert 5 cl au lieu de 4 cl, sur un mois.</li>
+  <li><b>Hausse de prix</b> : ce que rapporterait 50 centimes de plus sur un produit, selon vos volumes.</li>
+</ul>
+
+<h2 id="resto"><span class="n">7</span>Dosis Resto : vos plats</h2>
+<p class="ou">Option · onglet Cuisine</p>
+<p>Si vous servez à manger, activez <b>Dosis Resto</b> dans les Réglages : un onglet <b>Cuisine</b> apparaît.</p>
+<ol class="pas">
+  <li><b>Ingrédients</b> : ajoutez ce que vous achetez (au kilo, au litre ou à la pièce) avec son prix.</li>
+  <li><b>Préparations</b> : vos bases (sauce, pâte, garniture), faites d'ingrédients. Leur coût se calcule tout seul.</li>
+  <li><b>Plats</b> : composez chaque plat avec ingrédients et préparations. Vous obtenez le coût de l'assiette, la marge et un prix conseillé.</li>
+</ol>
+<p>Les allergènes des ingrédients remontent dans les plats : la <b>carte des allergènes</b> se prépare toute seule (Réglages).</p>
+
+<h2 id="equipe"><span class="n">8</span>Votre équipe</h2>
+<p class="ou">Réglages › Équipe</p>
+<ul>
+  <li><b>Inviter un barman</b> : Dosis Bar vous donne un code. Le barman crée son compte, touche <b class="k">Changer d'établissement ou rejoindre</b> et entre le code.</li>
+  <li>Le barman ne voit que le <b>Service</b> : il compte les ventes, sans voir vos prix d'achat ni vos marges.</li>
+  <li><b>Inviter un associé</b> : il a les mêmes droits que vous.</li>
+  <li>Pour retirer quelqu'un, touchez <b class="k">Retirer</b> à côté de son nom, puis confirmez.</li>
+</ul>
+
+<h2 id="reglages"><span class="n">9</span>Les réglages utiles</h2>
+<p class="ou">Icône Réglages, en haut à droite</p>
+<ul>
+  <li><b>Objectifs de marge</b> : par défaut 80 % pour les spiritueux et cocktails, 65 % pour les bouteilles et canettes servies entières.</li>
+  <li><b>Mes charges fixes</b> : loyer, salaires, énergie… Dosis Bar calcule votre bénéfice réel et le chiffre à faire pour couvrir vos charges.</li>
+  <li><b>Prix par zone</b> : des prix différents au comptoir, en salle, en terrasse ou pendant l'happy hour.</li>
+  <li><b>Carte des allergènes</b> : à imprimer ou à montrer au client.</li>
+  <li><b>Bilan du mois pour le comptable</b> : ventes, achats, marges et pertes du mois, avec un bouton <b class="k">Envoyer au comptable</b>.</li>
+  <li><b>Ma caisse enregistreuse</b> : pour connecter une caisse SumUp.</li>
+  <li><b>Compte</b> : changer d'email ou de mot de passe, télécharger toutes vos données, quitter ou supprimer l'établissement.</li>
+</ul>
+
+<h2 id="abonnement"><span class="n">10</span>Votre abonnement</h2>
+<p class="ou">Réglages › Mon abonnement</p>
+<ul>
+  <li>Pendant les 14 jours d'essai, tout est ouvert. Trois jours avant la fin, vous recevez un email de rappel.</li>
+  <li>Choisissez votre formule : <b>Dosis Bar 29 € HT par mois</b>, l'option <b>Dosis Resto + 15 € HT</b>, ou <b>Pro 59 € HT</b> avec Dosis Resto inclus. En payant à l'année, 2 mois sont offerts.</li>
+  <li>Le paiement se fait sur la page sécurisée de Mollie. Une facture vous est envoyée par email à chaque paiement, et vous la retrouvez dans <b class="k">Mes factures</b>.</li>
+  <li>Sans abonnement à la fin de l'essai, rien n'est perdu : vos données restent consultables, mais ne peuvent plus être modifiées.</li>
+  <li>Vous pouvez changer de formule ou résilier à tout moment, au même endroit.</li>
+</ul>
+
+<h2 id="questions"><span class="n">11</span>Questions fréquentes</h2>
+<h3>Comment mettre Dosis Bar sur l'écran d'accueil ?</h3>
+<p><b>iPhone :</b> ouvrez dosisbar.com/app.html dans Safari, touchez le bouton Partager (le carré avec une flèche), puis <b>Sur l'écran d'accueil</b>.<br>
+<b>Android :</b> ouvrez-le dans Chrome, touchez les trois points en haut à droite, puis <b>Installer l'application</b> ou <b>Ajouter à l'écran d'accueil</b>.</p>
+<h3>Puis-je l'utiliser sur l'ordinateur ?</h3>
+<p>Oui. Sur un grand écran, Dosis Bar s'affiche en pleine largeur, avec les onglets en haut. Vos données sont les mêmes sur tous vos appareils.</p>
+<h3>Mes chiffres sont-ils justes ?</h3>
+<p>Ils sont aussi justes que vos prix d'achat. Après chaque facture fournisseur, vérifiez que le prix de la bouteille est à jour : c'est le geste le plus important.</p>
+<h3>J'ai fait une erreur dans le service.</h3>
+<p>Tant que le service n'est pas clôturé, touchez le bouton <b class="k">−</b> à côté du produit pour retirer la vente en trop. Après la clôture, notez la correction comme une perte ou un offert.</p>
+<h3>Je n'ai pas reçu l'email de confirmation.</h3>
+<p>Regardez dans les courriers indésirables. L'email vient de contact@dosisbar.com.</p>
+
+<div class="box">
+  <p><b>Besoin d'aide ?</b> Écrivez-nous à <a href="mailto:contact@dosisbar.com">contact@dosisbar.com</a>, ou touchez <b class="k">Donner mon avis</b> dans les Réglages de l'app. Nous répondons rapidement, et vos idées font avancer Dosis Bar.</p>
+</div>
+
+<footer><a href="./">Accueil</a><a href="mentions-legales.html">Mentions légales</a><a href="confidentialite.html">Confidentialité</a><a href="conditions.html">Conditions d'utilisation</a><a href="cgv.html">CGV</a><span>© 2026 PARIS RHUM CLUB</span></footer>
+</body>
+</html>

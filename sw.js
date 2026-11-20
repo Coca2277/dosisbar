@@ -1,6 +1,6 @@
 /* Dosis Bar — service worker : l'app s'ouvre même sans réseau.
    Les données (Supabase) ne passent jamais par ce cache. */
-const VERSION = "dosis-v42";
+const VERSION = "dosis-v43";
 const SHELL = ["app.html", "index.html", "css/site.css", "img/app-home.webp", "css/app.css", "js/app.js", "js/config.js", "js/vendor/supabase.js", "js/scan.js", "js/import.js", "js/catalogue-prc.js", "icons/prc.svg", "js/vendor/xlsx.mini.min.js", "js/vendor/zxing.min.js",
   "manifest.webmanifest", "fonts/figtree.woff2", "fonts/bricolage-grotesque.woff2", "mentions-legales.html", "confidentialite.html", "conditions.html", "cgv.html", "css/doc.css", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/logo-bar.svg", "icons/logo-resto.svg", "icons/favicon.svg"];
 
