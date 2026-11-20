@@ -189,6 +189,7 @@ const cu = () => S.cu || (S.cu = {i: [], r: [], d: []});
 const ACC = () => MODE === "cloud" ? (S.acces || {etat: "essai", resto: true}) : {etat: "demo", resto: true};
 const canEdit = () => ACC().etat !== "lecture";
 const restoAllowed = () => ACC().resto !== false;
+const proAllowed = () => { const a = ACC(); return !!a.admin || a.etat === "essai" || (a.etat === "abonne" && a.formule === "pro"); };
 const LOCK = "LECTURE_SEULE";
 function needEdit() { if (!canEdit()) throw new Error(LOCK); }
 const isLock = e => /LECTURE_SEULE|Essai gratuit terminé/.test((e && e.message) || String(e));
@@ -1552,6 +1553,33 @@ async function prepareOrders() {
   if (groups[""]) toast("Produit sans fournisseur : à choisir dans sa commande");
   const first = cmds().find(c => c.statut === "brouillon" && c.f) || cmds().find(c => c.statut === "brouillon"); if (first) cmdSheet(first.id);
 }
+/* ================= Lecture automatique des factures (formule Pro) ================= */
+async function imageEnBase64(file) {   // photo réduite à 2000 px pour aller vite sans perdre la lisibilité
+  const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error("Photo illisible")); i.src = URL.createObjectURL(file); });
+  const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+  const cv = document.createElement("canvas"); cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(img.src);
+  return cv.toDataURL("image/jpeg", 0.85).split(",")[1];
+}
+const fichierEnBase64 = file => new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = () => ko(new Error("Fichier illisible")); fr.readAsDataURL(file); });
+async function lireFacture(file) {
+  if (!navigator.onLine) throw new Error("Connexion internet nécessaire pour lire une facture");
+  const pdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+  if (pdf && file.size > 6 * 1024 * 1024) throw new Error("PDF trop lourd (6 Mo maximum)");
+  const fichier = pdf ? await fichierEnBase64(file) : await imageEnBase64(file);
+  const {data, error} = await sb.functions.invoke("lire-facture", {body: {etab: ETAB.id, type: pdf ? "application/pdf" : "image/jpeg", fichier}});
+  if (error) { let m = error.message, code; try { const j = await error.context.json(); m = j.error || m; code = j.code; } catch (e) {} const er = new Error(m); er.code = code; throw er; }
+  if (data && data.error) { const er = new Error(data.error); er.code = data.code; throw er; }
+  if (!data || !data.lignes || !data.lignes.length) throw new Error("Aucun article trouvé sur ce document");
+  return data;
+}
+function proSheet(quoi) {
+  const titre = quoi === "caisse" ? "Caisse connectée" : "Lecture automatique des factures";
+  openSheet(`<h2 class="h">${titre}</h2><div class="sub">Cette fonction fait partie de la formule <b>Dosis Bar Pro</b>, à ${eur(ABO_HT.pro)} HT par mois.</div>
+    <div class="card"><div class="name" style="margin-bottom:6px">Avec Dosis Bar Pro</div><div class="meta" style="white-space:normal;line-height:1.6">
+    📷 Vos factures lues automatiquement : prix et stock à jour sans rien recopier<br>🔌 Vos ventes récupérées directement depuis votre caisse<br>🍽️ Dosis Resto inclus : coût et marge de vos plats<br>📊 Marges, service, stock, inventaire, commandes et équipe</div></div>
+    <button class="btn" id="proGo">Passer à Dosis Bar Pro</button>`, () => { $("proGo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
+}
 function cmdSheet(id, achat = false) {
   const c0 = id ? cmds().find(c => c.id === id) : null;
   const c = c0 ? JSON.parse(JSON.stringify(c0)) : {f: fours()[0] ? fours()[0].id : "", statut: achat ? "recue" : "brouillon", lignes: [], note: ""};
@@ -1559,34 +1587,80 @@ function cmdSheet(id, achat = false) {
   const srcOpts = [...S.products.map(p => ["p:" + p.id, p.n]), ...cu().i.map(i => ["i:" + i.id, "🧺 " + i.n])];
   const title = ro ? "Livraison reçue" : isAchat ? "Saisir un achat" : c.statut === "envoyee" ? "Commande envoyée" : id ? "Commande à envoyer" : "Nouvelle commande";
   openSheet(`<h2 class="h">${title}</h2><div class="sub">${ro ? "Reçue le " + new Date(c.recue_le || c.le).toLocaleDateString("fr-FR") : isAchat ? "Une facture ou un achat fait sans commande (Metro, marché…). Le stock et les prix d'achat sont mis à jour." : "Prix d'achat hors taxes"}</div>
+    ${isAchat ? `<button class="iabtn" id="cIA"><span class="ic">📷</span><span><b>Lire la facture automatiquement</b><small>Prenez la facture en photo ou choisissez le PDF : les articles et les prix se remplissent tout seuls.</small></span>${proAllowed() ? "" : `<span class="pro">Pro</span>`}</button>
+    <input type="file" id="cIAf" accept="image/*,application/pdf" hidden>` : ""}
     <div class="field"><label for="cF">Fournisseur</label><select id="cF" ${ro ? "disabled" : ""}>${opts([["", "— Choisir —"], ...fours().map(f => [f.id, f.n])], c.f)}</select></div>
-    <div id="cL"></div>${ro ? "" : `<button class="btn ghost" id="cAdd" style="margin-bottom:12px">+ Ajouter un article</button>`}
+    <div id="cL"></div>${isAchat ? `<div id="cIAr"></div>` : ""}${ro ? "" : `<button class="btn ghost" id="cAdd" style="margin-bottom:12px">+ Ajouter un article</button>`}
     ${ro ? "" : `<div class="field"><label for="cN">Message pour le fournisseur (facultatif)</label><input id="cN" value="${esc(c.note || "")}" placeholder="Ex : livraison avant jeudi 10 h" maxlength="200"></div>`}
     <div class="card" style="background:var(--card2)"><div class="res"><div style="grid-column:1/-1"><div class="l">Total HT</div><div class="v h" id="cTot"></div></div></div></div>
     <div id="cAct"></div>`, () => {
     const draw = () => {
       $("cL").innerHTML = c.lignes.length ? `<div class="card list">${c.lignes.map((l, k) => ro
         ? `<div class="row"><div class="grow"><div class="name">${esc(l.n)}</div><div class="meta">${f1(num(l.qr ?? l.q))} × ${esc(l.u)} à ${eur(num(l.pr ?? l.prix))}</div></div><div class="right m h">${eur(num(l.qr ?? l.q) * num(l.pr ?? l.prix))}</div></div>`
-        : `<div class="cline"><div class="grow"><select data-k="${k}" data-f="src" aria-label="Article">${opts(srcOpts, l.t + ":" + l.id)}</select><div class="meta">${esc(l.u)}</div></div>
+        : `<div class="cline"><div class="grow"><select data-k="${k}" data-f="src" aria-label="Article">${opts(srcOpts, l.t + ":" + l.id)}</select><div class="meta">${esc(l.u)}${l.lu ? ` · lu : « ${esc(l.lu)} »${l.chk ? ` <span class="badge b-warn">À vérifier</span>` : ""}` : ""}</div></div>
           <div class="field"><label>Qté</label><input data-k="${k}" data-f="q" inputmode="decimal" value="${f1x(l.q)}"></div>
           <div class="field"><label>Prix HT</label><input data-k="${k}" data-f="prix" inputmode="decimal" value="${f1x(l.prix)}"></div>
           <button class="x" data-del="${k}" aria-label="Retirer">✕</button></div>`).join("")}</div>`
         : `<div class="empty">Aucun article. Touchez « Ajouter un article ».</div>`;
       $("cL").querySelectorAll("[data-f]").forEach(e => e.oninput = () => { const l = c.lignes[+e.dataset.k];
-        if (e.dataset.f === "src") { const [t, ...r] = e.value.split(":"), sx = lineSource(t, r.join(":")); Object.assign(l, {t, id: r.join(":"), n: sx.n, u: sx.u, prix: sx.prix}); draw(); }
+        if (e.dataset.f === "src") { const [t, ...r] = e.value.split(":"), sx = lineSource(t, r.join(":")); Object.assign(l, {t, id: r.join(":"), n: sx.n, u: sx.u, chk: false, ...(l.lu ? {} : {prix: sx.prix})}); draw(); }
         else l[e.dataset.f] = num(e.value); tot(); });
       $("cL").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { c.lignes.splice(+b.dataset.del, 1); draw(); tot(); });
       tot();
     };
     const tot = () => { $("cTot").textContent = eur(cmdTotal(c)); };
     draw();
+    if ($("cIA")) {
+      const unk = [];   // lignes lues qui ne correspondent à aucun article
+      const drawUnk = () => {
+        $("cIAr").innerHTML = unk.length ? `<div class="lbl"><span>À relier (${unk.length})</span></div><div class="card list">${unk.map((x, k) => `<div class="cline"><div class="grow"><div class="name" style="font-size:14px">${esc(x.designation)}</div>
+            <div class="meta">${f1(+x.quantite || 0)} ${esc(x.unite || "")} à ${eur(+x.prix_unitaire_ht || 0)} HT</div>
+            <select data-u="${k}" aria-label="Relier à un article" style="margin-top:6px">${opts([["", "— Relier à… —"], ...srcOpts, ["ignore", "Ignorer cette ligne"]], "")}</select></div></div>`).join("")}</div>
+            <p class="tip">Reliez chaque ligne à un produit de votre carte. Dosis Bar s'en souviendra pour les prochaines factures.</p>` : "";
+        $("cIAr").querySelectorAll("[data-u]").forEach(s => s.onchange = () => { const x = unk[+s.dataset.u]; if (!s.value) return;
+          if (s.value !== "ignore") { const [t, ...rr] = s.value.split(":"), sx = lineSource(t, rr.join(":"));
+            c.lignes.push({t, id: rr.join(":"), n: sx.n, u: sx.u, q: +x.quantite || 1, prix: +x.prix_unitaire_ht || sx.prix, lu: x.designation}); }
+          else c.lignes.alias = {...(c.lignes.alias || {}), [Import.normName(x.designation)]: "ignore"};
+          unk.splice(+s.dataset.u, 1); drawUnk(); draw(); });
+      };
+      const appliquer = (fa) => {
+        if (fa.fournisseur && !$("cF").value) {   // fournisseur : on cherche le plus proche dans la liste
+          const m = Import.match([{key: Import.normName(fa.fournisseur)}], fours().map(f => ({key: f.id, label: f.n})), {})[0];
+          if (m && m.choice && m.status !== "unknown") { $("cF").value = m.choice; c.f = m.choice; }
+        }
+        const al = (S.opts && S.opts.alias_factures) || {};
+        const items = fa.lignes.map((l, k) => ({key: Import.normName(l.designation) || "l" + k, l}));
+        const rows = Import.match(items, srcOpts.map(([v, n]) => ({key: v, label: n.replace(/^🧺 /, "")})), al);
+        rows.forEach(rw => { const l = rw.l;
+          if (rw.choice === "ignore") return;
+          if (!rw.choice || rw.status === "unknown") return unk.push(l);
+          const [t, ...rr] = rw.choice.split(":"), sx = lineSource(t, rr.join(":")); if (!sx) return unk.push(l);
+          const ex = c.lignes.find(x => x.t === t && x.id === rr.join(":"));
+          if (ex) { ex.q = num(ex.q) + (+l.quantite || 0); return; }
+          c.lignes.push({t, id: rr.join(":"), n: sx.n, u: sx.u, q: +l.quantite || 1, prix: +l.prix_unitaire_ht > 0 ? +l.prix_unitaire_ht : sx.prix, lu: l.designation, chk: rw.status === "check"}); });
+        draw(); drawUnk();
+        const lu = fa.lignes.length, rel = lu - unk.length;
+        toast(`${lu} ligne${lu > 1 ? "s" : ""} lue${lu > 1 ? "s" : ""} · ${rel} reliée${rel > 1 ? "s" : ""} à votre carte`);
+      };
+      $("cIA").onclick = () => { if (MODE !== "cloud") return toast("Créez votre compte pour lire vos factures");
+        if (!proAllowed()) return proSheet("factures"); $("cIAf").click(); };
+      $("cIAf").onchange = async () => { const file = $("cIAf").files[0]; $("cIAf").value = ""; if (!file) return;
+        $("cIA").classList.add("busy"); $("cIA").querySelector("b").textContent = "Lecture en cours… (10 à 30 secondes)";
+        try { const d = await lireFacture(file); appliquer(d); $("cIA").querySelector("b").textContent = "Lire une autre facture"; }
+        catch (e) { if (e.code === "PRO") proSheet("factures"); else toast(frErr(e)); $("cIA").querySelector("b").textContent = "Lire la facture automatiquement"; }
+        $("cIA").classList.remove("busy"); };
+    }
     if (!ro) {
       $("cF").onchange = () => c.f = $("cF").value;
       $("cAdd").onclick = () => { if (!srcOpts.length) return toast("Ajoutez d'abord des produits");
         const mine = srcOpts.find(([v]) => { const [t, ...r] = v.split(":"), sx = lineSource(t, r.join(":")); return sx && sx.f === c.f && !c.lignes.some(l => l.t + ":" + l.id === v); }) || srcOpts.find(([v]) => !c.lignes.some(l => l.t + ":" + l.id === v)) || srcOpts[0];
         const [t, ...r] = mine[0].split(":"), sx = lineSource(t, r.join(":")); c.lignes.push({t, id: r.join(":"), n: sx.n, q: 1, u: sx.u, prix: sx.prix}); draw(); };
     }
-    const readC = () => { if (!ro) { c.f = $("cF").value; c.note = $("cN").value.trim(); } c.lignes = c.lignes.filter(l => num(l.q) > 0); return c; };
+    const readC = () => { if (!ro) { c.f = $("cF").value; c.note = $("cN").value.trim(); }
+      const extra = c.lignes.alias; c.lignes = c.lignes.filter(l => num(l.q) > 0);
+      const al = {...(extra || {})}; c.lignes.forEach(l => { if (l.lu) al[Import.normName(l.lu)] = l.t + ":" + l.id; });
+      if (Object.keys(al).length) actOpts({alias_factures: {...((S.opts && S.opts.alias_factures) || {}), ...al}}).catch(() => {});
+      return c; };
     const f = () => fourById($("cF").value);
     let acts = "";
     if (isAchat) acts = `<button class="btn" id="cRecv">Enregistrer l'achat</button>`;
@@ -1793,6 +1867,7 @@ async function caisseCall(body) {
 function caisseSheet() {
   if (MODE !== "cloud") return toast("Créez votre compte pour connecter votre caisse");
   if (isBarman()) return;
+  if (!proAllowed() && !S.caisse) return proSheet("caisse");
   const c = S.caisse;
   const autres = `<div class="card"><div class="name" style="font-size:14px">Votre caisse n'est pas dans la liste ?</div>
     <p class="tip" style="margin-top:6px">Zelty, L'Addition, Lightspeed, Hiboutik et les autres arrivent au fur et à mesure. En attendant, importez le fichier des ventes de votre caisse (Service › Importer les ventes) : ça marche avec toutes les caisses.</p>
@@ -1860,7 +1935,7 @@ function aboSheet() {
     ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Dosis Resto" : "") : "Abonnement"}</div>
       <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + (a.annuel ? " TTC / an" : " TTC / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
     <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
-    <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Dosis Resto inclus. Factures et caisse connectée bientôt.")}</div>
+    <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Marges, service, stock et équipe, Dosis Resto inclus, factures lues automatiquement, caisse connectée.")}</div>
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
     <div class="seg" id="abPer" style="margin:2px 0 12px"><button type="button" data-p="m" class="${an ? "" : "on"}">Au mois</button><button type="button" data-p="a" class="${an ? "on" : ""}">À l'année · 2 mois offerts</button></div>
     <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
