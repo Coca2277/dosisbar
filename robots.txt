@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /facture.html
+
+Sitemap: https://dosisbar.com/sitemap.xml
