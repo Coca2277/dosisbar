@@ -1702,9 +1702,9 @@ function receptionSheet(id, c) {
       const ok = await act(async () => {
         for (const l of L) {
           if (l.t === "p") { const p = byId(l.id); if (!p) continue;
-            const oldR = prodCalc(p).rate, nb = num(l.pr) > 0 ? num(l.pr) : p.b, changed = Math.abs(nb - p.b) > .004;
+            const oldR = prodCalc(p).rate, oldB = p.b, nb = num(l.pr) > 0 ? num(l.pr) : p.b, changed = Math.abs(nb - p.b) > .004;
             await actSaveProduct(p.id, {...p, b: nb, st: Math.round((p.st + num(l.qr)) * 1000) / 1000});
-            if (changed) alerts.push({n: p.n, from: num(l.prix), to: nb, txt: `marge ${pct(oldR)} → ${pct(prodCalc(byId(p.id)).rate)}`, bad: prodCalc(byId(p.id)).rate < tgtP(p)});
+            if (changed) alerts.push({n: p.n, from: oldB, to: nb, txt: `marge ${pct(oldR)} → ${pct(prodCalc(byId(p.id)).rate)}`, bad: prodCalc(byId(p.id)).rate < tgtP(p)});
           } else { const i = cuFind("i", l.id); if (!i) continue; const b = buyInfo(i);
             if (num(l.pr) > 0 && Math.abs(num(l.pr) - b.pa) > .004) {
               const before = cu().d.map(d => [d, platCalc(d).rate]);
