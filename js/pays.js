@@ -54,7 +54,7 @@
     if (q) { ls.set("dosis.lang", q); return q; }
     const s = ls.get("dosis.lang"); if (s === "fr" || s === "es" || s === "en") return s;
     const n = (navigator.language || "fr").slice(0, 2).toLowerCase();
-    return n === "es" ? "es" : n === "en" ? "en" : "fr";
+    return n === "fr" ? "fr" : n === "es" ? "es" : "en";   // autre langue (allemand, italien…) : anglais
   }
   const LANG = detectLang();
   document.documentElement.lang = LANG;
