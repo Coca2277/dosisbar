@@ -92,6 +92,7 @@ const $ = id => document.getElementById(id);
 const num = v => { const n = parseFloat(String(v).replace(",", ".").replace(/\s/g, "")); return isFinite(n) ? n : 0; };
 const PAYS = window.DOSIS_PAYS, LOC = () => PAYS.loc(), VAT = k => PAYS.rate(k);
 const eur = (v, d = 2) => PAYS.money(v, d);
+const TR = s => (window.DOSIS_T ? window.DOSIS_T(s) : s);   // traduction d'un texte assemblé avec un nom
 const eurE = (v, d = 2) => isFinite(v) ? v.toLocaleString(LOC(), {minimumFractionDigits: d, maximumFractionDigits: d}) + " €" : "—";   // tarifs Dosis Bar : toujours en euros
 const pct = v => isFinite(v) ? Math.round(v).toLocaleString(LOC()) + " %" : "—";
 const f1 = v => (Math.round(v * 10) / 10).toLocaleString(LOC());
@@ -315,6 +316,8 @@ async function loadCloud() {
       lastInv: inv[0] ? {date: inv[0].le, loss: +inv[0].perte_ventes_ht} : null});
     S.alias = et.alias_caisse || {};
     S.opts = et.options || {}; S.resto = S.opts.resto || null;
+    if (!isBarman() && S.opts.langue !== PAYS.LANG) {   // langue des emails automatiques = langue choisie par le patron
+      S.opts.langue = PAYS.LANG; sb.from("etablissements").update({options: S.opts}).eq("id", e).then(() => {}, () => {}); }
     try { const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0);
       S.pertes = (await q(sb.from("pertes").select("id,le,type,libelle,qte,unite,cout_ht").eq("etab_id", e).gte("le", m0.toISOString()).order("le", {ascending: false})))
         .map(x => ({id: x.id, le: x.le, type: x.type, n: x.libelle, q: +x.qte, u: x.unite, c: +x.cout_ht})); } catch (x) { S.pertes = S.pertes || []; }
@@ -647,7 +650,7 @@ function oppSheet() {
 function renderDHome() {
   const el = $("dHome"); if (!el || !isDesk()) return;
   const d = scoreData(), o = opportunities(), gain = o.reduce((s, i) => s + i.month, 0), low = S.products.filter(p => p.st < p.m);
-  const hr = new Date().getHours(), hi = hr < 5 || hr >= 18 ? "Bonsoir" : "Bonjour", nm = esc(S.bar || (ETAB && ETAB.nom) || "votre établissement");
+  const hr = new Date().getHours(), hi = TR(hr < 5 || hr >= 18 ? "Bonsoir" : "Bonjour"), nm = esc(S.bar || (ETAB && ETAB.nom) || "votre établissement");
   const ro = restoOn(), plats = ro ? cu().d.map(x => ({x, k: platCalc(x)})).filter(p => p.k.ht > 0) : [], T = cuTarget();
   const pAvg = plats.length ? plats.reduce((s, p) => s + p.k.rate, 0) / plats.length : NaN, pCost = plats.length ? plats.reduce((s, p) => s + p.k.cost / p.k.ht * 100, 0) / plats.length : NaN;
   const pLow = plats.filter(p => p.k.rate < T).sort((a, b) => a.k.rate - b.k.rate);
@@ -682,7 +685,7 @@ function renderDHome() {
 addEventListener("resize", () => { if (view === "home") renderDHome(); });
 function renderHome() {
   const h = new Date().getHours();
-  $("hello").textContent = (h < 5 || h >= 18 ? "Bonsoir" : "Bonjour") + (S.bar ? ", " + S.bar : "");
+  $("hello").textContent = TR(h < 5 || h >= 18 ? "Bonsoir" : "Bonjour") + (S.bar ? ", " + S.bar : "");
   $("today").textContent = new Date().toLocaleDateString(LOC(), {weekday:"long",day:"numeric",month:"long"});
   const d = scoreData();
   const col = d.score >= 55 ? "var(--amber)" : "var(--bad)";

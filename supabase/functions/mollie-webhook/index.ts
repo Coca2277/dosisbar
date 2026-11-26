@@ -86,11 +86,13 @@ async function facturer(admin: any, p: any, etab: string, ab: Record<string, unk
   if (error) throw error;
   const key = Deno.env.get("RESEND_API_KEY");
   if (!f || f.envoyee_le || !key || !client.email) return;
+  let lg = "fr"; try { const { data: et } = await admin.from("etablissements").select("options").eq("id", etab).single(); lg = et?.options?.langue || "fr"; } catch (_) { /* français */ }
+  const sujet = lg === "es" ? `Su factura Dosis Bar ${f.numero}` : lg === "en" ? `Your Dosis Bar invoice ${f.numero}` : `Votre facture Dosis Bar ${f.numero}`;
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: "Dosis Bar <contact@dosisbar.com>", to: [client.email], bcc: ["contact@dosisbar.com"], reply_to: "contact@dosisbar.com",
-      subject: `Votre facture Dosis Bar ${f.numero}`, html: f.html,
+      subject: sujet, html: f.html,
     }),
   });
   if (r.ok) await admin.from("factures").update({ envoyee_le: new Date().toISOString() }).eq("numero", f.numero);
