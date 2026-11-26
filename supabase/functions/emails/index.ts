@@ -30,7 +30,14 @@ Dosis Bar · Paris Rhum Club SAS · <a href="https://dosisbar.com" style="color:
 }
 
 type Row = { type: string; nom: string; fin_essai: string | null; paye_jusqu: string | null };
-function contenu(r: Row, l: Lang) {
+const PRIX_BAR: Record<string, [number, string]> = { EUR: [35, "€"], GBP: [32, "£"], CHF: [45, "CHF"], USD: [49, "$"] };
+function prixBar(pays: string, l: Lang) {
+  const dev = ({ GB: "GBP", CH: "CHF", US: "USD" } as Record<string, string>)[pays] || "EUR", [v, sym] = PRIX_BAR[dev];
+  const m = dev === "EUR" ? (l === "en" ? `€${v}` : `${v} €`) : dev === "CHF" ? `${v} CHF` : `${sym}${v}`;
+  const ttc = pays === "FR" ? { fr: " (42 € TTC)", es: " (42 € IVA incl.)", en: " (€42 incl. VAT)" }[l] : "";
+  return { fr: `${m} HT par mois${ttc}`, es: `${m} sin IVA al mes${ttc}`, en: `${m} excl. VAT per month${ttc}` }[l];
+}
+function contenu(r: Row, l: Lang, pays = "FR") {
   const nom = esc(r.nom), APPL = APP + "?lang=" + l, GUIDE = "https://dosisbar.com/guide.html?lang=" + l;
   if (r.type === "bienvenue") {
     const fin = jour(r.fin_essai, l);
@@ -78,15 +85,15 @@ function contenu(r: Row, l: Lang) {
     const T = {
       fr: { s: `Votre essai Dosis Bar se termine ${quand}`, t: `Votre essai se termine ${quand}`, b: "Choisir ma formule",
         c: `<p>L'essai gratuit de <b>${nom}</b> se termine le <b>${fin}</b>.</p>
-<p>Pour continuer à suivre vos marges, vos stocks et vos services, choisissez votre formule en quelques secondes : <b>Dosis Bar à 29 € HT par mois</b> (34,80 € TTC), sans engagement, résiliable à tout moment. Ou 2 mois offerts en payant à l'année.</p>
+<p>Pour continuer à suivre vos marges, vos stocks et vos services, choisissez votre formule en quelques secondes : <b>Dosis Bar à ${prixBar(pays, "fr")}</b>, sans engagement, résiliable à tout moment. Ou 2 mois offerts en payant à l'année.</p>
 <p>Sans abonnement, rien n'est perdu : vos données restent enregistrées et consultables, mais vous ne pourrez plus les modifier.</p>` },
       es: { s: `Su prueba de Dosis Bar termina ${quand}`, t: `Su prueba termina ${quand}`, b: "Elegir mi plan",
         c: `<p>La prueba gratuita de <b>${nom}</b> termina el <b>${fin}</b>.</p>
-<p>Para seguir controlando sus márgenes, su stock y sus servicios, elija su plan en unos segundos: <b>Dosis Bar por 29 € sin IVA al mes</b>, sin permanencia, cancelable en cualquier momento. O 2 meses gratis pagando al año.</p>
+<p>Para seguir controlando sus márgenes, su stock y sus servicios, elija su plan en unos segundos: <b>Dosis Bar por ${prixBar(pays, "es")}</b>, sin permanencia, cancelable en cualquier momento. O 2 meses gratis pagando al año.</p>
 <p>Sin suscripción no se pierde nada: sus datos siguen guardados y consultables, pero ya no podrá modificarlos.</p>` },
       en: { s: `Your Dosis Bar trial ends ${quand}`, t: `Your trial ends ${quand}`, b: "Choose my plan",
         c: `<p>The free trial for <b>${nom}</b> ends on <b>${fin}</b>.</p>
-<p>To keep tracking your margins, stock and services, choose your plan in a few seconds: <b>Dosis Bar at €29 excl. VAT per month</b>, no commitment, cancel anytime. Or get 2 months free by paying yearly.</p>
+<p>To keep tracking your margins, stock and services, choose your plan in a few seconds: <b>Dosis Bar at ${prixBar(pays, "en")}</b>, no commitment, cancel anytime. Or get 2 months free by paying yearly.</p>
 <p>Without a subscription nothing is lost: your data stays saved and viewable, but you won't be able to edit it any more.</p>` },
     }[l];
     return { sujet: T.s, html: page(T.t, T.c, T.b, APPL + "&ouvrir=abonnement", l) };
@@ -119,14 +126,14 @@ Deno.serve(async () => {
   let envoyes = 0;
   // langue de chaque établissement (Réglages de l'app), français par défaut
   const ids = [...new Set((data || []).map((r: { etab_id: string }) => r.etab_id))];
-  const langs: Record<string, Lang> = {};
+  const langs: Record<string, Lang> = {}, paysDe: Record<string, string> = {};
   if (ids.length) { const { data: ets } = await admin.from("etablissements").select("id,options").in("id", ids);
-    for (const e of ets || []) { const lg = e.options?.langue; langs[e.id] = lg === "es" || lg === "en" ? lg : "fr"; } }
+    for (const e of ets || []) { const lg = e.options?.langue; langs[e.id] = lg === "es" || lg === "en" ? lg : "fr"; paysDe[e.id] = e.options?.pays || "FR"; } }
   for (const r of (data || []).slice(0, 50)) {
     // On réserve d'abord : si deux appels se croisent, un seul envoie
     const { error: dup } = await admin.from("emails_envoyes").insert({ etab_id: r.etab_id, type: r.type, cle: r.cle });
     if (dup) continue;
-    const c = contenu(r, langs[r.etab_id] || "fr");
+    const c = contenu(r, langs[r.etab_id] || "fr", paysDe[r.etab_id] || "FR");
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
       body: JSON.stringify({ from: "Dosis Bar <contact@dosisbar.com>", to: [r.email], reply_to: "contact@dosisbar.com", subject: c.sujet, html: c.html }),

@@ -3,8 +3,18 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const APP = "https://dosisbar.com/app.html";
-const PRIX_HT: Record<string, number> = { pilote: 19, bar: 29, pro: 59 };
-const RESTO_HT = 15;
+// Grilles HT par mois. v1 : abonnés d'avant le 26/11/2026 (prix gardé tant qu'ils restent abonnés). v2 : grille internationale.
+type G = { pilote: number; bar: number; pro: number; resto: number };
+const GRILLES: Record<string, Record<string, G>> = {
+  v1: { EUR: { pilote: 19, bar: 29, pro: 59, resto: 15 } },
+  v2: { EUR: { pilote: 19, bar: 35, pro: 79, resto: 20 }, GBP: { pilote: 19, bar: 32, pro: 69, resto: 17 },
+        CHF: { pilote: 25, bar: 45, pro: 95, resto: 25 }, USD: { pilote: 25, bar: 49, pro: 99, resto: 25 } },
+};
+const FORMULES = ["pilote", "bar", "pro"];
+const PAYS_UE = ["FR","ES","PT","IT","DE","AT","BE","NL","LU","IE","GR","CY","MT","HR","SI","SK","FI","EE","LV","LT","BG","CZ","PL","HU","RO","DK","SE"];
+const deviseDe = (pays: string) => ({ GB: "GBP", CH: "CHF", US: "USD" } as Record<string, string>)[pays] || "EUR";
+// TVA : 20 % en France ; client professionnel d'un autre pays de l'UE : autoliquidation (0 %) ; hors UE : pas de TVA française
+const tvaDe = (pays: string) => pays === "FR" ? 20 : 0;
 const MOIS_PAR_AN = 10; // paiement à l'année : 12 mois pour le prix de 10
 const NOMS: Record<string, string> = { pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro" };
 const CORS = {
@@ -28,9 +38,10 @@ async function mollie(path: string, method = "GET", body?: unknown) {
   return j;
 }
 
-function tarif(formule: string, resto: boolean) {
-  const ht = PRIX_HT[formule] + (resto && formule !== "pro" ? RESTO_HT : 0);
-  return { ht, ttc: Math.round(ht * 1.2 * 100) / 100 };
+function tarif(formule: string, resto: boolean, grille: string, devise: string, tva: number) {
+  const g = (GRILLES[grille] || GRILLES.v2)[devise] || GRILLES.v2.EUR;
+  const ht = g[formule as keyof G] + (resto && formule !== "pro" ? g.resto : 0);
+  return { ht, ttc: Math.round(ht * (100 + tva)) / 100 };
 }
 
 Deno.serve(async (req) => {
@@ -47,13 +58,17 @@ Deno.serve(async (req) => {
     const etab = String(b.etab || "");
     const { data: m } = await admin.from("membres").select("role").eq("etab_id", etab).eq("user_id", u.user.id).maybeSingle();
     if (!m || m.role !== "patron") return json({ error: "Réservé au patron de l'établissement" }, 403);
-    const { data: et } = await admin.from("etablissements").select("nom").eq("id", etab).single();
+    const { data: et } = await admin.from("etablissements").select("nom,options").eq("id", etab).single();
+    const pays = String(et?.options?.pays || "FR"), fac = (et?.options?.facturation || {}) as Record<string, string>;
     const { data: ab0 } = await admin.from("abonnements").select("*").eq("etab_id", etab).maybeSingle();
     const ab = ab0 || { etab_id: etab, statut: "aucun" };
 
     if (b.action === "souscrire") {
       const formule = String(b.formule);
-      if (!PRIX_HT[formule]) return json({ error: "Formule inconnue" }, 400);
+      if (!FORMULES.includes(formule)) return json({ error: "Formule inconnue" }, 400);
+      if (pays !== "FR" && PAYS_UE.includes(pays) && !/^[A-Z]{2}[0-9A-Z]{6,14}$/.test(String(fac.tva || "")))
+        return json({ error: "Numéro de TVA intracommunautaire obligatoire pour un établissement hors de France" }, 400);
+      const devise = deviseDe(pays), tva = tvaDe(pays);
       if (formule === "pilote") {
         const code = Deno.env.get("CODE_PILOTE");
         if (!code || String(b.code || "").trim().toUpperCase() !== code.trim().toUpperCase()) return json({ error: "Code pilote incorrect" }, 400);
@@ -61,7 +76,7 @@ Deno.serve(async (req) => {
       if (ab.statut === "actif" && ab.mollie_abonnement) return json({ error: "Un abonnement est déjà actif : utilisez « Changer de formule »" }, 400);
       const resto = !!b.resto && formule !== "pro";
       const annuel = !!b.annuel && formule !== "pilote";
-      const t = tarif(formule, resto);
+      const t = tarif(formule, resto, "v2", devise, tva);
       const periode = annuel ? Math.round(t.ttc * MOIS_PAR_AN * 100) / 100 : t.ttc;
       let client = ab.mollie_client;
       if (!client) {
@@ -70,16 +85,16 @@ Deno.serve(async (req) => {
       }
       const essai = formule === "pilote";
       const p = await mollie(`/customers/${client}/payments`, "POST", {
-        amount: { currency: "EUR", value: essai ? "1.00" : euros(periode) },
+        amount: { currency: devise, value: essai ? "1.00" : euros(periode) },
         description: essai ? `${NOMS[formule]} – validation du moyen de paiement` : `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${annuel ? "1re année" : "1er mois"}`,
         sequenceType: "first",
         redirectUrl: APP + "?abonnement=retour",
         webhookUrl: url + "/functions/v1/mollie-webhook",
-        metadata: { etab, formule, resto, annuel, ttc: periode },
+        metadata: { etab, formule, resto, annuel, ttc: periode, devise, tva, grille: "v2" },
       });
       await admin.from("abonnements").upsert({
         etab_id: etab, formule, resto, statut: ab.statut === "actif" ? "actif" : "en_attente",
-        montant_ttc: periode, annuel, mollie_client: client, maj: new Date().toISOString(),
+        montant_ttc: periode, annuel, mollie_client: client, grille: "v2", devise, tva_taux: tva, maj: new Date().toISOString(),
       });
       return json({ url: p._links.checkout.href });
     }
@@ -102,12 +117,13 @@ Deno.serve(async (req) => {
     if (b.action === "changer") {
       if (!ab.mollie_abonnement || ab.statut !== "actif") return json({ error: "Aucun abonnement actif à modifier" }, 400);
       const formule = String(b.formule);
-      if (!PRIX_HT[formule] || formule === "pilote") return json({ error: "Formule non disponible" }, 400);
+      if (!FORMULES.includes(formule) || formule === "pilote") return json({ error: "Formule non disponible" }, 400);
       const resto = !!b.resto && formule !== "pro";
-      const t = tarif(formule, resto);
+      const devise = String(ab.devise || "EUR"), tva = ab.tva_taux == null ? 20 : +ab.tva_taux;
+      const t = tarif(formule, resto, String(ab.grille || "v1"), devise, tva);
       const periode = ab.annuel ? Math.round(t.ttc * MOIS_PAR_AN * 100) / 100 : t.ttc;
       await mollie(`/customers/${ab.mollie_client}/subscriptions/${ab.mollie_abonnement}`, "PATCH", {
-        amount: { currency: "EUR", value: euros(periode) },
+        amount: { currency: devise, value: euros(periode) },
         description: `${NOMS[formule]}${resto ? " + Dosis Resto" : ""} – ${etab.slice(0, 8)}`,
       });
       await admin.from("abonnements").update({ formule, resto, montant_ttc: periode, maj: new Date().toISOString() }).eq("etab_id", etab);

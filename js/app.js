@@ -331,7 +331,7 @@ async function loadCloud() {
       S.cmds = cr2.map(x => ({...x.data, id: x.id, le: x.le, statut: x.statut, recue_le: x.recue_le, total: +x.total_ht}));
       S.releves = rr.map(x => ({le: x.le, v: +x.valeur_ht, o: x.origine}));
     } catch (x) { S.fours = S.fours || []; S.cmds = S.cmds || []; S.releves = S.releves || []; }
-    try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", e).maybeSingle()); } catch (x) { S.abo = S.abo || null; }
+    try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu,annuel,grille,devise,tva_taux").eq("etab_id", e).maybeSingle()); } catch (x) { S.abo = S.abo || null; }
     try { S.caisse = await q(sb.from("caisse_connexions").select("fournisseur,nom_compte,derniere_synchro,erreur").eq("etab_id", e).maybeSingle()); } catch (x) { S.caisse = S.caisse || null; }
     try { const chr = await q(sb.from("etab_charges").select("data").eq("etab_id", e).maybeSingle()); S.ch = chr ? chr.data : null; } catch (x) { S.ch = S.ch || null; }
     ETAB.nom = et.nom;
@@ -1479,7 +1479,7 @@ function platSheet(id) {
 const METIERS = [["bar","Bar"],["bar-resto","Bar-restaurant"],["resto","Restaurant"],["fastfood","Restauration rapide"],["traiteur","Traiteur"]];
 function restoSheet() {
   if (!restoAllowed()) return openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations, coût de l'assiette et allergènes, dans la même app que votre bar.</div>
-    <div class="card"><div class="name">+ 15 € HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
+    <div class="card"><div class="name">+ ${prixAbo("resto")} HT par mois</div><div class="meta" style="white-space:normal">À ajouter à votre abonnement, ou incluse dans la formule Pro. Vos fiches déjà créées sont conservées.</div></div>
     <button class="btn" id="roAbo">Ajouter Dosis Resto à mon abonnement</button>`, () => { $("roAbo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
   const r = Object.assign({on: false, metier: "bar-resto", target: 70}, S.resto || {});
   openSheet(`<h2 class="h"><img src="icons/logo-resto.svg" width="22" height="25" alt="" style="vertical-align:-5px;margin-right:6px">Dosis Resto</h2><div class="sub">Fiches plats, préparations et coût de l'assiette, dans la même app que votre bar.</div>
@@ -1589,7 +1589,7 @@ async function lireFacture(file) {
 }
 function proSheet(quoi) {
   const titre = quoi === "caisse" ? "Caisse connectée" : "Lecture automatique des factures";
-  openSheet(`<h2 class="h">${titre}</h2><div class="sub">Cette fonction fait partie de la formule <b>Dosis Bar Pro</b>, à ${eurE(ABO_HT.pro)} HT par mois.</div>
+  openSheet(`<h2 class="h">${titre}</h2><div class="sub">Cette fonction fait partie de la formule <b>Dosis Bar Pro</b>, à ${prixAbo("pro")} HT par mois.</div>
     <div class="card"><div class="name" style="margin-bottom:6px">Avec Dosis Bar Pro</div><div class="meta" style="white-space:normal;line-height:1.6">
     📷 Vos factures lues automatiquement : prix et stock à jour sans rien recopier<br>🔌 Vos ventes récupérées directement depuis votre caisse<br>🍽️ Dosis Resto inclus : coût et marge de vos plats<br>📊 Marges, service, stock, inventaire, commandes et équipe</div></div>
     <button class="btn" id="proGo">Passer à Dosis Bar Pro</button>`, () => { $("proGo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
@@ -1866,10 +1866,27 @@ async function bilanSheet(off = 0) {
 }
 
 /* ================= Abonnement (Mollie) ================= */
-const ABO_HT = {pilote: 19, bar: 29, pro: 59}, ABO_RESTO = 15, ABO_MOIS_AN = 10;
+/* Grilles de prix HT par mois. v1 = abonnés d'avant le 26/11/2026 (prix gardé tant qu'ils restent abonnés).
+   v2 = grille internationale : la devise dépend du pays de l'établissement. Mêmes valeurs dans la fonction « abonnement ». */
+const GRILLES = {v1: {EUR: {pilote: 19, bar: 29, pro: 59, resto: 15}},
+  v2: {EUR: {pilote: 19, bar: 35, pro: 79, resto: 20}, GBP: {pilote: 19, bar: 32, pro: 69, resto: 17},
+       CHF: {pilote: 25, bar: 45, pro: 95, resto: 25}, USD: {pilote: 25, bar: 49, pro: 99, resto: 25}}};
+const PAYS_UE = ["FR","ES","PT","IT","DE","AT","BE","NL","LU","IE","GR","CY","MT","HR","SI","SK","FI","EE","LV","LT","BG","CZ","PL","HU","RO","DK","SE"];
+const aboDevise = () => ({GB: "GBP", CH: "CHF", US: "USD"})[PAYS.pays()] || "EUR";
+function aboGrille() { const a = S.abo || {};   // abonné actif avec l'ancienne grille : on garde ses prix
+  if (a.statut === "actif" && (a.grille || "v1") === "v1") return {g: GRILLES.v1.EUR, cur: "EUR"};
+  const cur = a.statut === "actif" && a.devise ? a.devise : aboDevise(); return {g: GRILLES.v2[cur] || GRILLES.v2.EUR, cur}; }
+function aboTva() { const p = PAYS.pays();   // TVA française seulement pour la France ; UE : autoliquidation ; hors UE : pas de TVA
+  if (p === "FR") return {taux: 20, label: "TTC (TVA 20 %)", ue: false};
+  if (PAYS_UE.includes(p)) return {taux: 0, label: "Sans TVA française (autoliquidation)", ue: true};
+  return {taux: 0, label: "Sans TVA française", ue: false}; }
+const moneyC = (v, cur, d = 2) => cur === "EUR" ? eurE(v, d) : new Intl.NumberFormat(LOC(), {style: "currency", currency: cur, minimumFractionDigits: d, maximumFractionDigits: d}).format(v);
+const ABO_MOIS_AN = 10;
+const ABO_HT = new Proxy({}, {get: (o, k) => aboGrille().g[k]});
+const prixAbo = (k, d = 0) => moneyC(aboGrille().g[k], aboGrille().cur, d);
 const ABO_NOMS = {pilote: "Bar pilote", bar: "Dosis Bar", pro: "Dosis Bar Pro"};
 const ABO_ST = {aucun: ["Pas d'abonnement", ""], en_attente: ["Paiement en attente", "b-warn"], actif: ["Actif", "b-ok"], impaye: ["Paiement refusé", "b-bad"], annule: ["Résilié", "b-warn"]};
-const aboHT = (f, r) => ABO_HT[f] + (r && f !== "pro" ? ABO_RESTO : 0);
+const aboHT = (f, r) => { const g = aboGrille().g; return g[f] + (r && f !== "pro" ? g.resto : 0); };
 /* ================= Caisse enregistreuse connectée (SumUp pour commencer) ================= */
 const CAISSE_NOMS = {sumup: "SumUp"};
 async function caisseCall(body) {
@@ -1937,28 +1954,28 @@ async function aboCall(body) {
   if (data && data.error) throw new Error(data.error);
   return data;
 }
-async function aboRefresh() { if (!cloud()) return; accRefresh(); try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu").eq("etab_id", ETAB.id).maybeSingle()); save(); } catch (e) {} }
+async function aboRefresh() { if (!cloud()) return; accRefresh(); try { S.abo = await q(sb.from("abonnements").select("formule,resto,statut,montant_ttc,paye_jusqu,annuel,grille,devise,tva_taux").eq("etab_id", ETAB.id).maybeSingle()); save(); } catch (e) {} }
 function aboSheet() {
   if (MODE !== "cloud") return toast("Créez votre compte pour vous abonner");
   const a = S.abo || {statut: "aucun"}, actif = a.statut === "actif", st = ABO_ST[a.statut] || ABO_ST.aucun;
   let f = actif ? a.formule : "bar", r = actif ? !!a.resto : restoOn(), an = actif ? !!a.annuel : false;
-  const fx = (S.opts && S.opts.facturation) || {};
+  const fx = (S.opts && S.opts.facturation) || {}, TV = aboTva(), CUR = aboGrille().cur, M = (v, d) => moneyC(v, CUR, d);
   const card = (k, desc) => `<button type="button" class="abo ${f === k ? "on" : ""}" data-f="${k}" ${actif && k === "pilote" && a.formule !== "pilote" ? "disabled" : ""}>
-      <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eurE(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
-  openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement SEPA. Sans engagement, résiliable à tout moment.</div>
+      <span class="n">${ABO_NOMS[k]}</span><span class="p h">${M(ABO_HT[k], 0)} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
+  openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement. Sans engagement, résiliable à tout moment.</div>
     ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Dosis Resto" : "") : "Abonnement"}</div>
-      <div class="meta">${a.montant_ttc ? eurE(+a.montant_ttc) + (a.annuel ? " TTC / an" : " TTC / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString(LOC()) : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
+      <div class="meta">${a.montant_ttc ? moneyC(+a.montant_ttc, a.devise || "EUR") + (a.annuel ? " / an" : " / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString(LOC()) : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
     <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
     <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Marges, service, stock et équipe, Dosis Resto inclus, factures lues automatiquement, caisse connectée.")}</div>
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
     <div class="seg" id="abPer" style="margin:2px 0 12px"><button type="button" data-p="m" class="${an ? "" : "on"}">Au mois</button><button type="button" data-p="a" class="${an ? "on" : ""}">À l'année · 2 mois offerts</button></div>
-    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eurE(ABO_RESTO)} HT / mois</small></span></label>
-    <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l" id="abPerL">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
+    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${M(ABO_HT.resto, 0)} HT / mois</small></span></label>
+    <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l" id="abPerL">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">${TV.label}</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
     <div class="lbl"><span>Informations de facturation</span></div>
     <div class="field"><label for="fxNom">Raison sociale</label><input id="fxNom" maxlength="120" value="${esc(fx.nom || ETAB.nom || "")}" placeholder="Nom de la société ou de l'entreprise"></div>
     <div class="field"><label for="fxAdr">Adresse</label><input id="fxAdr" maxlength="200" value="${esc(fx.adresse || "")}" placeholder="N°, rue, code postal, ville" autocomplete="street-address"></div>
-    <div class="field"><label for="fxSiret">SIRET <small>(facultatif)</small></label><input id="fxSiret" maxlength="20" inputmode="numeric" value="${esc(fx.siret || "")}"></div>
-    <div class="field"><label for="fxTva">N° de TVA intracommunautaire <small>(facultatif)</small></label><input id="fxTva" maxlength="20" autocapitalize="characters" value="${esc(fx.tva || "")}"></div>
+    <div class="field"><label for="fxSiret">${PAYS.pays() === "FR" ? "SIRET" : "N° d'immatriculation de l'entreprise"} <small>(facultatif)</small></label><input id="fxSiret" maxlength="20" inputmode="numeric" value="${esc(fx.siret || "")}"></div>
+    <div class="field"><label for="fxTva">N° de TVA intracommunautaire ${TV.ue ? "<small>(obligatoire hors de France)</small>" : "<small>(facultatif)</small>"}</label><input id="fxTva" maxlength="20" autocapitalize="characters" value="${esc(fx.tva || "")}"></div>
     <div class="field"><label for="fxMail">Email qui reçoit les factures</label><input id="fxMail" type="email" maxlength="120" value="${esc(fx.email || (ME && ME.email) || "")}"></div>
     ${actif ? `<button class="btn ghost" id="fxSave" style="margin-bottom:14px">Enregistrer la facturation</button>` : ""}
     ${actif ? "" : `<label class="check" style="align-items:flex-start;font-size:13px;line-height:1.45;margin:4px 0 12px"><input type="checkbox" id="abCgv" style="margin-top:1px;flex:none"> <span>J'accepte les <a href="cgv.html" target="_blank" style="color:var(--amber2)">conditions générales de vente</a> : abonnement sans engagement, période commencée non remboursée.</span></label>`}
@@ -1969,19 +1986,20 @@ function aboSheet() {
     const fxRead = () => ({nom: $("fxNom").value.trim(), adresse: $("fxAdr").value.trim(), siret: $("fxSiret").value.replace(/\s/g, ""), tva: $("fxTva").value.replace(/\s/g, "").toUpperCase(), email: $("fxMail").value.trim()});
     const fxCheck = (v) => { if (!v.nom) { toast("Indiquez la raison sociale"); $("fxNom").focus(); return false; }
       if (v.adresse.length < 8) { toast("Indiquez l'adresse complète, elle figure sur la facture"); $("fxAdr").focus(); return false; }
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) { toast("Indiquez un email valide pour les factures"); $("fxMail").focus(); return false; } return true; };
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) { toast("Indiquez un email valide pour les factures"); $("fxMail").focus(); return false; }
+      if (TV.ue && !/^[A-Z]{2}[0-9A-Z]{6,14}$/.test(v.tva)) { toast("Indiquez votre numéro de TVA intracommunautaire (ex : ESB12345678)"); $("fxTva").focus(); return false; } return true; };
     if ($("fxSave")) $("fxSave").onclick = async () => { const v = fxRead(); if (!fxCheck(v)) return;
       try { await actOpts({facturation: v}); toast("Facturation enregistrée ✓"); } catch (e) { toast(frErr(e)); } };
-    if ($("abFacts")) q(sb.from("factures").select("numero,emise_le,total_ttc").eq("etab_id", ETAB.id).order("emise_le", {ascending: false}).order("numero", {ascending: false})).then(l => {
-      $("abFacts").innerHTML = l.length ? l.map(x => `<a class="card row" style="text-decoration:none;color:inherit;margin-bottom:8px" href="facture.html?n=${encodeURIComponent(x.numero)}" target="_blank" rel="noopener"><div class="grow"><div class="name">Facture ${esc(x.numero)}</div><div class="meta">${new Date(x.emise_le).toLocaleDateString(LOC())}</div></div><b>${eurE(+x.total_ttc)}</b></a>`).join("") : "Aucune facture pour l'instant. Elle arrive par email à chaque paiement.";
+    if ($("abFacts")) q(sb.from("factures").select("numero,emise_le,total_ttc,devise").eq("etab_id", ETAB.id).order("emise_le", {ascending: false}).order("numero", {ascending: false})).then(l => {
+      $("abFacts").innerHTML = l.length ? l.map(x => `<a class="card row" style="text-decoration:none;color:inherit;margin-bottom:8px" href="facture.html?n=${encodeURIComponent(x.numero)}" target="_blank" rel="noopener"><div class="grow"><div class="name">Facture ${esc(x.numero)}</div><div class="meta">${new Date(x.emise_le).toLocaleDateString(LOC())}</div></div><b>${moneyC(+x.total_ttc, x.devise || "EUR")}</b></a>`).join("") : "Aucune facture pour l'instant. Elle arrive par email à chaque paiement.";
     }).catch(() => { $("abFacts").textContent = "Factures indisponibles pour le moment."; });
     const upd = () => { document.querySelectorAll(".abo").forEach(b => b.classList.toggle("on", b.dataset.f === f));
       $("abCodeF").hidden = !(f === "pilote" && !actif); $("abRestoF").hidden = f === "pro"; r = $("abResto").checked;
       $("abPer").hidden = f === "pilote" || actif; if (f === "pilote") an = false;
       $("abPer").querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.p === "a") === an));
       const ht = aboHT(f, r) * (an ? ABO_MOIS_AN : 1); $("abPerL").textContent = an ? "Par an" : "Par mois";
-      $("abHT").textContent = eurE(ht) + " HT"; $("abTTC").textContent = eurE(Math.round(ht * 120) / 100);
-      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : an ? `12 mois pour le prix de 10 : vous économisez ${eurE(aboHT(f, r) * 2)} HT. Payé aujourd'hui, puis chaque année automatiquement.` : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
+      $("abHT").textContent = M(ht) + " HT"; $("abTTC").textContent = M(Math.round(ht * (100 + TV.taux)) / 100);
+      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : " + M(1, 0) + " pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : an ? `12 mois pour le prix de 10 : vous économisez ${M(aboHT(f, r) * 2, 0)} HT. Payé aujourd'hui, puis chaque année automatiquement.` : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
       $("abGo").textContent = actif ? (f === a.formule && r === !!a.resto ? "Formule actuelle" : "Changer de formule") : "Continuer vers le paiement";
       $("abGo").disabled = actif && f === a.formule && r === !!a.resto; };
     document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });

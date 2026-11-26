@@ -1190,3 +1190,10 @@ create index if not exists factures_lues_etab_le on public.factures_lues(etab_id
 alter table public.factures_lues enable row level security;   -- aucune règle : réservé au serveur
 grant select, insert on public.factures_lues to service_role;
 grant usage, select on sequence public.factures_lues_id_seq to service_role;
+
+-- ================= Migration 18 : prix internationaux (26/11/2026) =================
+-- grille v1 = anciens prix gardés par les abonnés d'avant le 26/11/2026 ; v2 = grille internationale.
+alter table abonnements add column if not exists grille text not null default 'v1';
+alter table abonnements add column if not exists devise text not null default 'EUR';
+alter table abonnements add column if not exists tva_taux numeric not null default 20;
+alter table factures add column if not exists devise text not null default 'EUR';
