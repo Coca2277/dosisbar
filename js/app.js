@@ -90,9 +90,11 @@ function save() {
 /* ================= Outils ================= */
 const $ = id => document.getElementById(id);
 const num = v => { const n = parseFloat(String(v).replace(",", ".").replace(/\s/g, "")); return isFinite(n) ? n : 0; };
-const eur = (v, d = 2) => isFinite(v) ? v.toLocaleString("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d}) + " €" : "—";
-const pct = v => isFinite(v) ? Math.round(v).toLocaleString("fr-FR") + " %" : "—";
-const f1 = v => (Math.round(v * 10) / 10).toLocaleString("fr-FR");
+const PAYS = window.DOSIS_PAYS, LOC = () => PAYS.loc(), VAT = k => PAYS.rate(k);
+const eur = (v, d = 2) => PAYS.money(v, d);
+const eurE = (v, d = 2) => isFinite(v) ? v.toLocaleString(LOC(), {minimumFractionDigits: d, maximumFractionDigits: d}) + " €" : "—";   // tarifs Dosis Bar : toujours en euros
+const pct = v => isFinite(v) ? Math.round(v).toLocaleString(LOC()) + " %" : "—";
+const f1 = v => (Math.round(v * 10) / 10).toLocaleString(LOC());
 const f1x = v => v === "" || v == null ? "" : String(Math.round(num(v) * 100) / 100).replace(".", ",");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const byId = id => S.products.find(p => String(p.id) === String(id));
@@ -124,20 +126,20 @@ const chOn = () => cpv() > 0;
 const netTarget = () => S.ch && isFinite(num(S.ch.net)) ? num(S.ch.net) : 15;
 function withCh(r) { const ch = cpv(), full = r.cost + ch, net = r.ht - full;
   return Object.assign(r, {ch, full, net, netRate: r.ht > 0 ? net / r.ht * 100 : NaN}); }
-const tvaOf = a => typeof a === "number" ? a : (a ? .2 : .1);
+const tvaOf = a => typeof a === "number" ? a : VAT(a ? "alc" : "soft");
 function suggestNet(cost, alc, netPct = netTarget()) { const ht = (cost + cpv()) / (1 - netPct / 100); return ceil10(ht * (1 + tvaOf(alc))); }
 function minPrice(cost, alc) { return ceil10((cost + cpv()) * (1 + tvaOf(alc))); }
 function realVolume() { // verres réellement vendus par mois, d'après les services clôturés
   const h = (S.history || []).filter(x => !x.demo && x.qty > 0); if (h.length < 3) return null;
   const t = h.map(x => +new Date(x.date)), days = Math.max(7, (Math.max(...t) - Math.min(...t)) / 864e5 + 1);
   return Math.round(h.reduce((a, x) => a + x.qty, 0) / days * 30); }
-function prodCalc(p) { const tva = p.a ? .2 : .1, ht = p.s / (1 + tva), cost = pcost(p, p.d), marg = ht - cost;
+function prodCalc(p) { const tva = tvaOf(!!p.a), ht = p.s / (1 + tva), cost = pcost(p, p.d), marg = ht - cost;
   return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc: !!p.a}); }
 function cockCalc(k) { let cost = num(k.x), alc = false;
   k.ing.forEach(i => { const p = byId(i.p); if (p) { cost += pcost(p, i.cl); if (p.a) alc = true; } });
-  const tva = alc ? .2 : .1, ht = k.s / (1 + tva), marg = ht - cost;
+  const tva = tvaOf(alc), ht = k.s / (1 + tva), marg = ht - cost;
   return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc}); }
-function suggest(cost, alc, target) { const ht = cost / (1 - target / 100); return ceil10(ht * (alc ? 1.2 : 1.1)); }
+function suggest(cost, alc, target) { const ht = cost / (1 - target / 100); return ceil10(ht * (1 + tvaOf(!!alc))); }
 function status(c, p, t = S.target) {
   if (p && !(p.s > 0)) return ["Ingrédient", "b-ok"];
   if (chOn() && c.ht > 0 && c.net < 0) return ["À perte", "b-bad"];
@@ -210,7 +212,14 @@ function cuUnitCost(t, id, seen = new Set()) { // coût HT d'une petite unité (
   const r = num(o.rend); return r > 0 ? linesCost(o.lines, seen) / r : 0;
 }
 function linesCost(lines, seen) { return (lines || []).reduce((t, l) => t + cuUnitCost(l.t, l.id, new Set(seen)) * num(l.q), 0); }
-function platCalc(d) { const tva = num(d.tva || 10) / 100, cost = linesCost(d.lines) + num(d.x), ht = num(d.s) / (1 + tva), marg = ht - cost;
+function platTvaOpts(cur) { const T = PAYS.tx(), P = v => f1(v) + " %";
+  const l = T.code === "FR" ? [[10, "10 % · sur place ou à emporter à consommer tout de suite"], [5.5, "5,5 % · à emporter pour plus tard, traiteur sans service"], [20, "20 % · avec alcool"]]
+    : T.ht ? [[0, "Prix hors taxe · la taxe est ajoutée à l'encaissement"]]
+    : [[T.food, P(T.food) + " · sur place"], [T.emp, P(T.emp) + " · à emporter"], [T.alc, P(T.alc) + " · avec alcool"]];
+  const seen = new Set(), out = l.filter(([v]) => !seen.has(v) && seen.add(v));
+  if (cur != null && cur !== "" && !seen.has(num(cur))) out.push([num(cur), P(num(cur))]);
+  return out; }
+function platCalc(d) { const tva = num(d.tva || VAT("food") * 100) / 100, cost = linesCost(d.lines) + num(d.x), ht = num(d.s) / (1 + tva), marg = ht - cost;
   return withCh({tva, ht, cost, marg, rate: ht > 0 ? marg / ht * 100 : NaN, alc: false}); }
 function suggestPlat(cost, tva, t = cuTarget()) { return ceil10(cost / (1 - t / 100) * (1 + tva)); }
 function prepUses(r, target, seen = new Set()) { // la préparation r utilise-t-elle target (directement ou non) ?
@@ -619,9 +628,9 @@ function renderAccBan() {
   const el = $("accBan"); if (!el) return; const A = ACC(); let h = "";
   if (A.etat === "lecture") h = `<div class="accban lock"><div><b>Votre essai gratuit est terminé.</b><span>Vos données sont gardées, mais plus rien ne peut être modifié ni encaissé dans le mode Service.</span></div><button class="mini" data-abo>S'abonner</button></div>`;
   else if (A.etat === "essai" && A.fin_essai) { const d = daysLeft(A.fin_essai);
-    h = `<div class="accban"><div><b>Essai gratuit : ${d > 1 ? `encore ${d} jours` : d === 1 ? "dernier jour" : "se termine aujourd'hui"}</b><span>Tout est ouvert jusqu'au ${new Date(A.fin_essai + "T12:00:00").toLocaleDateString("fr-FR", {day: "numeric", month: "long"})}. Abonnez-vous pour continuer ensuite.</span></div><button class="mini" data-abo>Voir les offres</button></div>`; }
+    h = `<div class="accban"><div><b>Essai gratuit : ${d > 1 ? `encore ${d} jours` : d === 1 ? "dernier jour" : "se termine aujourd'hui"}</b><span>Tout est ouvert jusqu'au ${new Date(A.fin_essai + "T12:00:00").toLocaleDateString(LOC(), {day: "numeric", month: "long"})}. Abonnez-vous pour continuer ensuite.</span></div><button class="mini" data-abo>Voir les offres</button></div>`; }
   else if (A.etat === "abonne" && A.statut === "impaye" && A.paye_jusqu) { const lim = new Date(A.paye_jusqu + "T12:00:00"); lim.setDate(lim.getDate() + 15);
-    h = `<div class="accban lock"><div><b>Paiement refusé</b><span>Mettez à jour votre carte avant le ${lim.toLocaleDateString("fr-FR", {day: "numeric", month: "long"})} pour garder l'accès.</span></div><button class="mini" data-abo>Régulariser</button></div>`; }
+    h = `<div class="accban lock"><div><b>Paiement refusé</b><span>Mettez à jour votre carte avant le ${lim.toLocaleDateString(LOC(), {day: "numeric", month: "long"})} pour garder l'accès.</span></div><button class="mini" data-abo>Régulariser</button></div>`; }
   el.innerHTML = h; el.hidden = !h; const b = el.querySelector("[data-abo]"); if (b) b.onclick = aboSheet;
 }
 /* ================= Accueil ordinateur : le mot du jour + deux comptoirs ================= */
@@ -646,7 +655,7 @@ function renderDHome() {
   if (d.empty) { msg = `${hi}. Ajoutez votre carte pour voir ce que rapporte ${nm}.`; sub = `Commencez par l'onglet Bar : chaque boisson ajoutée calcule sa marge.`; }
   else if (chOn()) { const tot = chTotal(), vol = num(S.ch.v), res = vol * d.avgEur - tot, need = d.avgEur > 0 ? Math.ceil(tot / d.avgEur) : 0;
     msg = res >= 0 ? `${hi}. Ce mois, ${nm} devrait gagner <em>${eur(res, 0)}</em>.` : `${hi}. Ce mois, il manque <em class="neg">${eur(-res, 0)}</em> pour couvrir vos charges.`;
-    sub = `${eur(tot, 0)} de charges fixes, couvertes à partir de ${need.toLocaleString("fr-FR")} ventes par mois. Vous en faites environ ${vol.toLocaleString("fr-FR")}.`; }
+    sub = `${eur(tot, 0)} de charges fixes, couvertes à partir de ${need.toLocaleString(LOC())} ventes par mois. Vous en faites environ ${vol.toLocaleString(LOC())}.`; }
   else { msg = `${hi}. Vos boissons vous rapportent en moyenne <em>${pct(d.avgRate)}</em> de marge.`; sub = `<button class="link" data-a="ch">Ajoutez vos charges fixes</button> pour connaître votre vrai bénéfice du mois.`; }
   const todo = [];
   if (o.length) todo.push([`Corriger ${o.length} prix de boisson${o.length > 1 ? "s" : ""}`, `<span class="pos">+${eur(gain, 0)} / mois</span>`, "opp"]);
@@ -674,7 +683,7 @@ addEventListener("resize", () => { if (view === "home") renderDHome(); });
 function renderHome() {
   const h = new Date().getHours();
   $("hello").textContent = (h < 5 || h >= 18 ? "Bonsoir" : "Bonjour") + (S.bar ? ", " + S.bar : "");
-  $("today").textContent = new Date().toLocaleDateString("fr-FR", {weekday:"long",day:"numeric",month:"long"});
+  $("today").textContent = new Date().toLocaleDateString(LOC(), {weekday:"long",day:"numeric",month:"long"});
   const d = scoreData();
   const col = d.score >= 55 ? "var(--amber)" : "var(--bad)";
   $("scoreGlass").innerHTML = glass(d.score / 100, {w:74, col, wave:true});
@@ -716,7 +725,7 @@ function renderHome() {
   const hist = S.history.slice(-6), bars = hist.map(x => ({d: new Date(x.date), m: x.marg, now: false}));
   if (t.qty) bars.push({d: new Date(), m: t.marg, now: true});
   const mx = Math.max(1, ...bars.map(b => b.m));
-  $("chart").innerHTML = bars.length ? bars.map((b, i) => `<div class="c"><em>${Math.round(b.m)}€</em><div class="bar ${b.now ? "now" : ""}" style="height:${Math.max(4, b.m / mx * 78)}%;animation-delay:${i * 50}ms"></div><span>${b.now ? "Ce soir" : b.d.toLocaleDateString("fr-FR", {weekday:"short"}).replace(".", "")}</span></div>`).join("")
+  $("chart").innerHTML = bars.length ? bars.map((b, i) => `<div class="c"><em>${Math.round(b.m)}€</em><div class="bar ${b.now ? "now" : ""}" style="height:${Math.max(4, b.m / mx * 78)}%;animation-delay:${i * 50}ms"></div><span>${b.now ? "Ce soir" : b.d.toLocaleDateString(LOC(), {weekday:"short"}).replace(".", "")}</span></div>`).join("")
     : `<div class="empty" style="width:100%">Clôturez un service pour voir l'historique</div>`;
 }
 
@@ -880,7 +889,7 @@ $("closeSvc").onclick = () => {
   const rows = Object.entries(agg).map(([k, a]) => ({it: serviceItems().find(x => x.key === k), q: a.q, m: a.m, ca: a.ca})).filter(r => r.it).map(r => ({...r, ca: r.ca || r.q * zonePrice(r.it.s, "comptoir")}));
   const top = rows.slice().sort((a, b) => barman ? b.ca - a.ca : b.m - a.m).slice(0, 3);
   const lossTxt = Object.entries(t.loss).map(([z, x]) => `${LOSS[z][1]} ${x.n} ${z === "perso" ? "personnel" : LOSS[z][0].toLowerCase()}${!barman && x.c ? " (" + eur(x.c) + ")" : ""}`).join(" · ");
-  openSheet(`<h2 class="h">Fin du service</h2><div class="sub">${new Date().toLocaleDateString("fr-FR", {weekday:"long",day:"numeric",month:"long"})}</div>
+  openSheet(`<h2 class="h">Fin du service</h2><div class="sub">${new Date().toLocaleDateString(LOC(), {weekday:"long",day:"numeric",month:"long"})}</div>
     <div class="res" style="margin-bottom:14px">
     ${barman ? `<div class="hl"><div><div class="l">Ventes du soir (TTC)</div><div class="v h">${eur(t.ca)}</div></div>${glass(.7, {w:40})}</div><div><div class="l">Verres servis</div><div class="v h">${t.qty}</div></div>`
     : `<div class="hl"><div><div class="l">Marge du soir (HT)</div><div class="v h">${eur(t.marg)}</div></div>${glass(t.ht ? t.marg / t.ht : 0, {w:40})}</div>
@@ -920,6 +929,8 @@ $("pProd").onchange = () => { const p = byId($("pProd").value); if (p) { $("pPla
 ["xCat","xUp","xVol"].forEach(i => $(i).oninput = calcPrice);
 function renderCalc() {
   ["glass","piece","pour","price"].forEach(t => $("c-" + t).style.display = t === calcTab ? "block" : "none");
+  const ht = PAYS.tx().ht; ["cAlc", "qAlc"].forEach(id => { const bs = $(id).querySelectorAll("button");
+    bs[0].textContent = "Alcool" + (ht ? "" : " · TVA " + f1(VAT("alc") * 100) + " %"); bs[1].textContent = "Sans alcool" + (ht ? "" : " · " + f1(VAT("soft") * 100) + " %"); });
   const opts = S.products.filter(p => p.a && p.d < p.cap).map(p => `<option value="${esc(p.id)}">${esc(p.n)}</option>`).join("");
   const cur = $("pProd").value; $("pProd").innerHTML = opts;
   if (cur && byId(cur)) $("pProd").value = cur; else { const p = byId($("pProd").value); if (p) { $("pPlan").value = f1(p.d); $("pReal").value = f1(p.d + 1); } }
@@ -984,7 +995,7 @@ function orderList() { return S.products.filter(p => p.st < p.m).map(p => ({p, q
 function renderStock() {
   $("stVal").textContent = eur(S.products.reduce((s, p) => s + p.b * p.st, 0), 0);
   const o = orderList(); $("stLow").textContent = o.length; $("stLow").style.color = o.length ? "var(--bad)" : "var(--ok)";
-  $("lastInv").textContent = S.lastInv ? `Inventaire du ${new Date(S.lastInv.date).toLocaleDateString("fr-FR")}` : "";
+  $("lastInv").textContent = S.lastInv ? `Inventaire du ${new Date(S.lastInv.date).toLocaleDateString(LOC())}` : "";
   $("stockList").innerHTML = S.products.length ? S.products.map(p => { const low = p.st < p.m; return `
     <div class="row"><div style="flex:none">${bottle(p.st / Math.max(1, p.m * 2), low ? "var(--bad)" : "var(--amber)")}</div>
     <div class="grow"><div class="name">${esc(p.n)}</div><div class="meta" style="color:${low ? "var(--bad)" : "var(--mut)"}">minimum ${f1(p.m)}${low ? " · à commander" : ""}</div></div>
@@ -1123,7 +1134,7 @@ function impMatch(det, map, ref, fname) {
         const res = await actImport(list, $("mDate").value || today, ref, aliases);
         save(); render();
         openSheet(`<div style="text-align:center;padding:6px 0 4px">${glass(res.ht ? res.marg / res.ht : .7, {w:60, wave:true})}</div>
-          <h2 class="h" style="text-align:center">Soirée importée ✓</h2><div class="sub" style="text-align:center">${new Date($("mDate") ? $("mDate").value : today).toLocaleDateString("fr-FR", {weekday:"long", day:"numeric", month:"long"})}</div>
+          <h2 class="h" style="text-align:center">Soirée importée ✓</h2><div class="sub" style="text-align:center">${new Date($("mDate") ? $("mDate").value : today).toLocaleDateString(LOC(), {weekday:"long", day:"numeric", month:"long"})}</div>
           <div class="res" style="margin-bottom:14px"><div class="hl"><div><div class="l">Marge de la soirée (HT)</div><div class="v h">${eur(res.marg)}</div></div></div>
           <div><div class="l">Ventes TTC</div><div class="v h">${eur(res.ca)}</div></div><div><div class="l">Verres</div><div class="v h">${res.qty}</div></div>
           <div><div class="l">Taux de marge</div><div class="v h">${pct(res.ht ? res.marg / res.ht * 100 : NaN)}</div></div><div><div class="l">Stock</div><div class="v h" style="font-size:15px">mis à jour</div></div></div>
@@ -1219,7 +1230,7 @@ function productSheet(id, preset) {
     <div class="field"><label for="fCode">Code-barres</label><div class="codefield"><input id="fCode" inputmode="numeric" value="${esc(p.code || "")}" placeholder="Scannez ou tapez le code" maxlength="40"><button id="fScan" type="button" aria-label="Scanner le code-barres">📷</button></div></div>
     <div class="two">
       <div class="field"><label for="fC">Catégorie</label><select id="fC">${opts(Object.keys(CATS).map(c => [c, CATS[c] + "  " + c]), p.c)}</select></div>
-      <div class="field"><label for="fA">Type</label><select id="fA">${opts([[1,"Alcool · 20 %"],[0,"Sans alcool · 10 %"]], p.a)}</select></div>
+      <div class="field"><label for="fA">Type</label><select id="fA">${opts([[1, "Alcool" + (PAYS.tx().ht ? "" : " · " + f1(VAT("alc") * 100) + " %")], [0, "Sans alcool" + (PAYS.tx().ht ? "" : " · " + f1(VAT("soft") * 100) + " %")]], p.a)}</select></div>
       <div class="field"><label for="fB" id="fBl">Prix ${contName(p) === "fût" ? "du fût" : "bouteille"} HT (€)</label><input id="fB" inputmode="decimal" value="${p.b === "" ? "" : f1x(p.b)}"></div>
       <div class="field"><label for="fCap" id="fCapl">Contenance (${uOf(p)})</label><input id="fCap" inputmode="decimal" value="${f1x(p.cap)}"><div class="tip" id="fCapT" style="padding:4px 0 0">${contName(p) === "fût" ? "Fût de 30 L = 3000 cl" : ""}</div></div>
       <div class="field" style="grid-column:1/-1"><label for="fU">Se mesure en</label><select id="fU">${opts(Object.entries(UNITS).map(([k, v]) => [k, v[1]]), uOf(p))}</select></div>
@@ -1329,7 +1340,7 @@ function cocktailSheet(id) {
       const hot = x.cat === "Boissons chaudes";
       $("kRes").innerHTML = `<div><div class="l">Coût ${hot ? "de la boisson" : "du cocktail"}</div><div class="v h">${eur(c.cost)}</div></div><div><div class="l">Gagné par ${hot ? "tasse" : "verre"}</div><div class="v h">${eur(c.marg)}</div></div>
        <div><div class="l">Taux de marge</div><div class="v h" style="color:${tone(c.rate)}">${pct(c.rate)}</div></div><div><div class="l">Prix conseillé (${S.target} %)</div><div class="v h">${eur(sg)}</div></div>
-       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${c.alc ? 20 : 10} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${zonesLine(x.s, c)}
+       <div style="grid-column:1/-1"><div class="l">Détail du coût · TVA ${f1(c.tva * 100)} %</div><div style="font-size:12px;margin-top:3px">${lines || "—"}${x.x ? " + extras " + eur(x.x) : ""}</div></div>${zonesLine(x.s, c)}
        <div style="grid-column:1/-1"><div class="l">Allergènes (d'après les produits)</div><div style="font-size:12px;margin-top:3px">${esc(algText(cockAlg(x)))}</div></div>${chBlock(c, c.alc, "kS", upd)}`; armCh("kS", upd); };
     drawIng(); upd(); ["kN","kS","kX","kT"].forEach(i => $(i).oninput = upd);
     $("kAdd").onclick = () => { const u = S.products.find(p => !ing.some(g => g.p === p.id)) || S.products[0]; ing.push({p: u.id, cl: 2}); drawIng(); upd(); };
@@ -1352,7 +1363,7 @@ function renderCuisine() {
   let html;
   if (cuTab === "d") html = list.map(d => ({d, k: platCalc(d)})).sort((a, b) => b.k.marg - a.k.marg).map(({d, k}) => { const T = cuTarget(), st = status(k, null, T);
     return `<div class="row tap" data-id="${esc(d.id)}"><div class="emoji">${CU_CATS[d.c] || "🍴"}</div>
-      <div class="grow"><div class="name">${esc(d.n)}</div><div class="meta">${eur(num(d.s))} TTC · coût ${eur(k.cost)} · TVA ${String(num(d.tva || 10)).replace(".", ",")} %</div></div>
+      <div class="grow"><div class="name">${esc(d.n)}</div><div class="meta">${eur(num(d.s))} TTC · coût ${eur(k.cost)} · TVA ${f1(num(d.tva || VAT("food") * 100))} %</div></div>
       <div class="right"><div class="m h">${eur(k.marg)}</div>${chOn() && k.ht > 0 ? `<div style="font-size:12px;font-weight:600;color:${k.net < 0 ? "var(--bad)" : k.netRate >= netTarget() ? "var(--ok)" : "var(--amber)"}">réel ${eur(k.net)}</div>` : `<div style="font-size:12px;color:${tone(k.rate, T)};font-weight:600">${pct(k.rate)}</div>`}<span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("");
   else if (cuTab === "r") html = list.map(r => { const u = r.ru || "g", per = cuUnitCost("r", r.id), big = u === "g" ? ["kg", 1000] : u === "cl" ? ["L", 100] : ["pièce", 1];
     return `<div class="row tap" data-id="${esc(r.id)}"><div class="emoji">🥣</div><div class="grow"><div class="name">${esc(r.n)}</div><div class="meta">Rend ${f1(num(r.rend))} ${u} · ${(r.lines || []).length} ingrédient${(r.lines || []).length > 1 ? "s" : ""}</div></div>
@@ -1435,12 +1446,12 @@ function prepSheet(id) {
 }
 function platSheet(id) {
   if (!cu().i.length) return toast("Ajoutez d'abord des ingrédients (onglet Ingrédients)");
-  const o = id ? cuFind("d", id) : {n: "", c: "Plat", s: "", tva: 10, x: 0, lines: []}; const lines = (o.lines || []).map(l => ({...l}));
+  const o = id ? cuFind("d", id) : {n: "", c: "Plat", s: "", tva: VAT("food") * 100, x: 0, lines: []}; const lines = (o.lines || []).map(l => ({...l}));
   openSheet(`<h2 class="h">${id ? esc(o.n) : "Nouveau plat"}</h2><div class="sub">Le coût de l'assiette se calcule ingrédient par ingrédient</div>
     <div class="field"><label for="dN">Nom du plat</label><input id="dN" value="${esc(o.n)}" placeholder="Ex : Burger maison et frites" maxlength="80"></div>
     <div class="two"><div class="field"><label for="dC">Catégorie</label><select id="dC">${opts(Object.keys(CU_CATS).map(k => [k, CU_CATS[k] + "  " + k]), o.c)}</select></div>
     <div class="field"><label for="dS">Prix de vente TTC (€)</label><input id="dS" inputmode="decimal" value="${f1x(o.s)}"></div></div>
-    <div class="field"><label for="dT">TVA</label><select id="dT">${opts([[10,"10 % · sur place ou à emporter à consommer tout de suite"],[5.5,"5,5 % · à emporter pour plus tard, traiteur sans service"],[20,"20 % · avec alcool"]], o.tva)}</select>
+    <div class="field"><label for="dT">TVA</label><select id="dT">${opts(platTvaOpts(o.tva), o.tva)}</select>
       <div class="tip" style="padding:6px 0 0">Les taux dépendent de votre activité : faites-les confirmer par votre comptable.</div></div>
     <div class="lbl" style="margin-top:4px"><span>Dans l'assiette</span></div><div id="dL"></div>
     <button class="btn ghost" id="dAdd" style="margin-bottom:12px">+ Ajouter un ingrédient ou une préparation</button>
@@ -1532,7 +1543,7 @@ function renderCmds() {
   const L = cmds().filter(c => c.statut !== "recue").concat(cmds().filter(c => c.statut === "recue").slice(0, 3));
   el.innerHTML = L.length ? L.map(c => { const f = fourById(c.f), st = CMD_ST[c.statut];
     return `<div class="row tap" data-cmd="${esc(c.id)}"><div class="emoji">${c.statut === "recue" ? "📦" : "🧾"}</div><div class="grow"><div class="name">${esc(f ? f.n : "Sans fournisseur")}</div>
-      <div class="meta">${(c.lignes || []).length} article${(c.lignes || []).length > 1 ? "s" : ""} · ${new Date(c.statut === "recue" && c.recue_le ? c.recue_le : c.le).toLocaleDateString("fr-FR", {day: "numeric", month: "short"})}</div></div>
+      <div class="meta">${(c.lignes || []).length} article${(c.lignes || []).length > 1 ? "s" : ""} · ${new Date(c.statut === "recue" && c.recue_le ? c.recue_le : c.le).toLocaleDateString(LOC(), {day: "numeric", month: "short"})}</div></div>
       <div class="right"><div class="m h">${eur(c.total != null ? c.total : cmdTotal(c))}</div><span class="badge ${st[1]}">${st[0]}</span></div></div>`; }).join("")
     : `<div class="empty">Aucune commande en cours.</div>`;
   el.querySelectorAll("[data-cmd]").forEach(r => r.onclick = () => cmdSheet(r.dataset.cmd));
@@ -1575,7 +1586,7 @@ async function lireFacture(file) {
 }
 function proSheet(quoi) {
   const titre = quoi === "caisse" ? "Caisse connectée" : "Lecture automatique des factures";
-  openSheet(`<h2 class="h">${titre}</h2><div class="sub">Cette fonction fait partie de la formule <b>Dosis Bar Pro</b>, à ${eur(ABO_HT.pro)} HT par mois.</div>
+  openSheet(`<h2 class="h">${titre}</h2><div class="sub">Cette fonction fait partie de la formule <b>Dosis Bar Pro</b>, à ${eurE(ABO_HT.pro)} HT par mois.</div>
     <div class="card"><div class="name" style="margin-bottom:6px">Avec Dosis Bar Pro</div><div class="meta" style="white-space:normal;line-height:1.6">
     📷 Vos factures lues automatiquement : prix et stock à jour sans rien recopier<br>🔌 Vos ventes récupérées directement depuis votre caisse<br>🍽️ Dosis Resto inclus : coût et marge de vos plats<br>📊 Marges, service, stock, inventaire, commandes et équipe</div></div>
     <button class="btn" id="proGo">Passer à Dosis Bar Pro</button>`, () => { $("proGo").onclick = () => { closeSheet(); setTimeout(aboSheet, 250); }; });
@@ -1586,7 +1597,7 @@ function cmdSheet(id, achat = false) {
   const ro = c.statut === "recue" && !!c0, isAchat = !c0 && achat;
   const srcOpts = [...S.products.map(p => ["p:" + p.id, p.n]), ...cu().i.map(i => ["i:" + i.id, "🧺 " + i.n])];
   const title = ro ? "Livraison reçue" : isAchat ? "Saisir un achat" : c.statut === "envoyee" ? "Commande envoyée" : id ? "Commande à envoyer" : "Nouvelle commande";
-  openSheet(`<h2 class="h">${title}</h2><div class="sub">${ro ? "Reçue le " + new Date(c.recue_le || c.le).toLocaleDateString("fr-FR") : isAchat ? "Une facture ou un achat fait sans commande (Metro, marché…). Le stock et les prix d'achat sont mis à jour." : "Prix d'achat hors taxes"}</div>
+  openSheet(`<h2 class="h">${title}</h2><div class="sub">${ro ? "Reçue le " + new Date(c.recue_le || c.le).toLocaleDateString(LOC()) : isAchat ? "Une facture ou un achat fait sans commande (Metro, marché…). Le stock et les prix d'achat sont mis à jour." : "Prix d'achat hors taxes"}</div>
     ${isAchat ? `<button class="iabtn" id="cIA"><span class="ic">📷</span><span><b>Lire la facture automatiquement</b><small>Prenez la facture en photo ou choisissez le PDF : les articles et les prix se remplissent tout seuls.</small></span>${proAllowed() ? "" : `<span class="pro">Pro</span>`}</button>
     <input type="file" id="cIAf" accept="image/*,application/pdf" hidden>` : ""}
     <div class="field"><label for="cF">Fournisseur</label><select id="cF" ${ro ? "disabled" : ""}>${opts([["", "— Choisir —"], ...fours().map(f => [f.id, f.n])], c.f)}</select></div>
@@ -1759,7 +1770,7 @@ function fourSheet(id) {
 
 /* ================= Bilan du mois (comptable) ================= */
 function monthBounds(off) { const a = new Date(); a.setDate(1); a.setHours(0, 0, 0, 0); a.setMonth(a.getMonth() - off); const b = new Date(a); b.setMonth(b.getMonth() + 1); return [a, b]; }
-const monthName = d => d.toLocaleDateString("fr-FR", {month: "long", year: "numeric"});
+const monthName = d => d.toLocaleDateString(LOC(), {month: "long", year: "numeric"});
 async function bilanData(off) {
   const [a, b] = monthBounds(off), inM = d => { d = new Date(d); return d >= a && d < b; };
   let sv, pertesHors;
@@ -1771,7 +1782,7 @@ async function bilanData(off) {
     pertesHors = r2.map(x => ({type: x.type, c: +x.cout_ht}));
   } else {
     const seen = new Set(), all = [...(S.histAll || []), ...(S.history || [])].filter(h => { const k = h.date; if (seen.has(k)) return false; seen.add(k); return true; });
-    sv = all.filter(h => inM(h.date)).map(h => ({ca: h.ca, ht: h.ht != null ? h.ht : h.ca / 1.2, marg: h.marg, qty: h.qty, pertes: h.pertes}));
+    sv = all.filter(h => inM(h.date)).map(h => ({ca: h.ca, ht: h.ht != null ? h.ht : h.ca / (1 + VAT("alc")), marg: h.marg, qty: h.qty, pertes: h.pertes}));
     pertesHors = (S.pertes || []).filter(x => inM(x.le)).map(x => ({type: x.type, c: x.c}));
   }
   const sum = (L, f) => L.reduce((t, x) => t + (+f(x) || 0), 0);
@@ -1822,7 +1833,7 @@ async function bilanSheet(off = 0) {
       <div class="card list">
         <div class="row"><div class="grow"><div class="name">Prévu, d'après les ventes</div><div class="meta">${pct(d.ht ? d.coutTheo / d.ht * 100 : NaN)} du CA HT</div></div><div class="right m h">${v(d.coutTheo)}</div></div>
         <div class="row"><div class="grow"><div class="name">Réel</div><div class="meta" style="white-space:normal">Stock début ${v(d.stockDeb)}${d.stockDebEst ? " (relevé en cours de mois)" : ""} + achats ${v(d.achats)} − stock fin ${v(d.stockFin)}</div></div><div class="right m h">${v(d.coutReel)}</div></div>
-        <div class="row"><div class="grow"><div class="name">Écart</div><div class="meta" style="white-space:normal">${d.ecart == null ? (d.debLate ? `Le premier relevé de stock date du ${new Date(d.firstInDate).toLocaleDateString("fr-FR")} : le calcul complet sera possible dès le mois prochain.` : "Il manque un relevé de stock pour ce mois : faites un inventaire en fin de mois.") : d.ecart > 0 ? "Marchandise sortie sans être vendue : surdosage, offerts non notés, casse, vol…" : "Pas de fuite visible."}</div></div>
+        <div class="row"><div class="grow"><div class="name">Écart</div><div class="meta" style="white-space:normal">${d.ecart == null ? (d.debLate ? `Le premier relevé de stock date du ${new Date(d.firstInDate).toLocaleDateString(LOC())} : le calcul complet sera possible dès le mois prochain.` : "Il manque un relevé de stock pour ce mois : faites un inventaire en fin de mois.") : d.ecart > 0 ? "Marchandise sortie sans être vendue : surdosage, offerts non notés, casse, vol…" : "Pas de fuite visible."}</div></div>
           <div class="right m h" style="color:${d.ecart == null ? "var(--mut)" : d.ecart > 0 ? "var(--bad)" : "var(--ok)"}">${d.ecart == null ? "—" : eur(d.ecart)}</div></div>
       </div>
       <div class="lbl"><span>Résultat estimé</span></div>
@@ -1842,7 +1853,7 @@ async function bilanSheet(off = 0) {
     $("biCsv").onclick = () => { const u = URL.createObjectURL(file()), a = document.createElement("a"); a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); toast("Fichier téléchargé ✓"); };
     $("biPdf").onclick = () => { $("printArea").innerHTML = `<h1>Bilan de ${esc(monthName(d.a))}</h1><p>${esc(S.bar || "")}</p><table><tbody>${bilanRows(d).slice(3).map(([k, x]) => k === "" ? `<tr><td colspan="2" style="border:0;height:6pt"></td></tr>`
         : x === "" ? `<tr><td colspan="2" style="background:#eee;font-weight:700">${esc(k)}</td></tr>` : `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof x === "number" ? eur(x) : esc(x)}</td></tr>`).join("")}</tbody></table>
-        <p class="pf">Estimation de gestion établie par Dosis Bar le ${new Date().toLocaleDateString("fr-FR")}. Ne remplace pas les pièces comptables.</p>`; window.print(); };
+        <p class="pf">Estimation de gestion établie par Dosis Bar le ${new Date().toLocaleDateString(LOC())}. Ne remplace pas les pièces comptables.</p>`; window.print(); };
     $("biSend").onclick = async () => { const e = await saveMail(), f = file(), title = `Bilan ${monthName(d.a)} – ${S.bar || ""}`;
       const body = `Bonjour,\n\nVoici le bilan de gestion de ${monthName(d.a)}${S.bar ? " pour " + S.bar : ""} :\n- Chiffre d'affaires HT : ${eur(d.ht)} (TTC ${eur(d.ca)})\n- Marge brute HT : ${eur(d.marg)}\n- Achats HT : ${eur(d.achats)}\n- Stock fin de mois HT : ${v(d.stockFin)}\n- Pertes et offerts : ${eur(lossT)}\n\nLe détail est dans le fichier joint.\nBien cordialement,\n${S.bar || ""}`;
       try { if (navigator.canShare && navigator.canShare({files: [f]})) { await navigator.share({files: [f], title, text: body}); return; } } catch (x) { if (x && x.name === "AbortError") return; }
@@ -1874,7 +1885,7 @@ function caisseSheet() {
     <button class="link" id="caAsk" style="padding:6px 0 0">Dire quelle caisse j'utilise</button></div>`;
   if (c) return openSheet(`<h2 class="h">Ma caisse enregistreuse</h2><div class="sub">Les ventes de votre caisse arrivent dans Dosis Bar sans ressaisie.</div>
     <div class="card"><div class="row" style="padding:0;border:0"><div class="grow"><div class="name">${esc(CAISSE_NOMS[c.fournisseur] || c.fournisseur)} · connectée ✓</div>
-      <div class="meta" style="white-space:normal">${esc(c.nom_compte || "")}${c.derniere_synchro ? " · dernières ventes récupérées le " + new Date(c.derniere_synchro).toLocaleString("fr-FR", {day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"}) : ""}</div>
+      <div class="meta" style="white-space:normal">${esc(c.nom_compte || "")}${c.derniere_synchro ? " · dernières ventes récupérées le " + new Date(c.derniere_synchro).toLocaleString(LOC(), {day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"}) : ""}</div>
       ${c.erreur ? `<div class="meta" style="white-space:normal;color:var(--bad);margin-top:4px">${esc(c.erreur)}</div>` : ""}</div></div></div>
     <button class="btn" id="caGet">Récupérer les ventes d'une journée</button><div class="gap"></div>
     <button class="btn ghost danger" id="caOff">Déconnecter la caisse</button>${autres}`, () => {
@@ -1914,7 +1925,7 @@ async function caisseVentes() {
     if (!r.items.length) { $("caFetch").classList.remove("busy");
       return toast(r.transactions ? `${r.transactions} paiement${r.transactions > 1 ? "s" : ""} trouvé${r.transactions > 1 ? "s" : ""}, mais sans détail des produits : utilisez le catalogue de produits dans votre caisse SumUp` : "Aucune vente SumUp ce jour-là"); }
     const lines = r.items.reduce((s, i) => s + i.q, 0);
-    impMatch({pre: {items: r.items, lines, date: r.date}, src: r.source, sansDetail: r.sansDetail, totalSansDetail: r.totalSansDetail}, {}, r.ref, `${r.source} · ${new Date(r.date + "T12:00:00").toLocaleDateString("fr-FR", {weekday: "long", day: "numeric", month: "long"})}`);
+    impMatch({pre: {items: r.items, lines, date: r.date}, src: r.source, sansDetail: r.sansDetail, totalSansDetail: r.totalSansDetail}, {}, r.ref, `${r.source} · ${new Date(r.date + "T12:00:00").toLocaleDateString(LOC(), {weekday: "long", day: "numeric", month: "long"})}`);
   } catch (e) { $("caFetch").classList.remove("busy"); toast(frErr(e)); }
 }
 async function aboCall(body) {
@@ -1930,15 +1941,15 @@ function aboSheet() {
   let f = actif ? a.formule : "bar", r = actif ? !!a.resto : restoOn(), an = actif ? !!a.annuel : false;
   const fx = (S.opts && S.opts.facturation) || {};
   const card = (k, desc) => `<button type="button" class="abo ${f === k ? "on" : ""}" data-f="${k}" ${actif && k === "pilote" && a.formule !== "pilote" ? "disabled" : ""}>
-      <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eur(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
+      <span class="n">${ABO_NOMS[k]}</span><span class="p h">${eurE(ABO_HT[k])} <small>HT / mois</small></span><span class="d">${desc}</span></button>`;
   openSheet(`<h2 class="h">Mon abonnement</h2><div class="sub">Paiement sécurisé par Mollie : carte bancaire ou prélèvement SEPA. Sans engagement, résiliable à tout moment.</div>
     ${a.statut !== "aucun" ? `<div class="card"><div class="row"><div class="grow"><div class="name">${a.formule ? ABO_NOMS[a.formule] + (a.resto && a.formule !== "pro" ? " + Dosis Resto" : "") : "Abonnement"}</div>
-      <div class="meta">${a.montant_ttc ? eur(+a.montant_ttc) + (a.annuel ? " TTC / an" : " TTC / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString("fr-FR") : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
+      <div class="meta">${a.montant_ttc ? eurE(+a.montant_ttc) + (a.annuel ? " TTC / an" : " TTC / mois") : ""}${a.paye_jusqu ? " · " + (a.statut === "annule" ? "accès jusqu'au " : "prochain prélèvement le ") + new Date(a.paye_jusqu).toLocaleDateString(LOC()) : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div></div>` : ""}
     <div class="lbl"><span>${actif ? "Changer de formule" : "Choisir une formule"}</span></div>
     <div class="abos">${card("pilote", "2 mois offerts, puis prix bloqué à vie. Avec le code pilote.")}${card("bar", "Toutes les fonctions du bar, équipe incluse.")}${card("pro", "Marges, service, stock et équipe, Dosis Resto inclus, factures lues automatiquement, caisse connectée.")}</div>
     <div class="field" id="abCodeF" hidden><label for="abCode">Code pilote</label><input id="abCode" autocapitalize="characters" placeholder="Code reçu de Dosis Bar" maxlength="30"></div>
     <div class="seg" id="abPer" style="margin:2px 0 12px"><button type="button" data-p="m" class="${an ? "" : "on"}">Au mois</button><button type="button" data-p="a" class="${an ? "on" : ""}">À l'année · 2 mois offerts</button></div>
-    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eur(ABO_RESTO)} HT / mois</small></span></label>
+    <label class="sw" id="abRestoF" style="margin:6px 0 14px"><input type="checkbox" id="abResto" ${r ? "checked" : ""}><span><b>Dosis Resto</b><small>Plats, préparations, coût de l'assiette : + ${eurE(ABO_RESTO)} HT / mois</small></span></label>
     <div class="card" style="background:var(--card2)"><div class="res"><div><div class="l" id="abPerL">Par mois</div><div class="v h" id="abHT"></div></div><div><div class="l">TTC (TVA 20 %)</div><div class="v h" id="abTTC"></div></div><div style="grid-column:1/-1;font-size:12px;color:var(--mut)" id="abNote"></div></div></div>
     <div class="lbl"><span>Informations de facturation</span></div>
     <div class="field"><label for="fxNom">Raison sociale</label><input id="fxNom" maxlength="120" value="${esc(fx.nom || ETAB.nom || "")}" placeholder="Nom de la société ou de l'entreprise"></div>
@@ -1959,15 +1970,15 @@ function aboSheet() {
     if ($("fxSave")) $("fxSave").onclick = async () => { const v = fxRead(); if (!fxCheck(v)) return;
       try { await actOpts({facturation: v}); toast("Facturation enregistrée ✓"); } catch (e) { toast(frErr(e)); } };
     if ($("abFacts")) q(sb.from("factures").select("numero,emise_le,total_ttc").eq("etab_id", ETAB.id).order("emise_le", {ascending: false}).order("numero", {ascending: false})).then(l => {
-      $("abFacts").innerHTML = l.length ? l.map(x => `<a class="card row" style="text-decoration:none;color:inherit;margin-bottom:8px" href="facture.html?n=${encodeURIComponent(x.numero)}" target="_blank" rel="noopener"><div class="grow"><div class="name">Facture ${esc(x.numero)}</div><div class="meta">${new Date(x.emise_le).toLocaleDateString("fr-FR")}</div></div><b>${eur(+x.total_ttc)}</b></a>`).join("") : "Aucune facture pour l'instant. Elle arrive par email à chaque paiement.";
+      $("abFacts").innerHTML = l.length ? l.map(x => `<a class="card row" style="text-decoration:none;color:inherit;margin-bottom:8px" href="facture.html?n=${encodeURIComponent(x.numero)}" target="_blank" rel="noopener"><div class="grow"><div class="name">Facture ${esc(x.numero)}</div><div class="meta">${new Date(x.emise_le).toLocaleDateString(LOC())}</div></div><b>${eurE(+x.total_ttc)}</b></a>`).join("") : "Aucune facture pour l'instant. Elle arrive par email à chaque paiement.";
     }).catch(() => { $("abFacts").textContent = "Factures indisponibles pour le moment."; });
     const upd = () => { document.querySelectorAll(".abo").forEach(b => b.classList.toggle("on", b.dataset.f === f));
       $("abCodeF").hidden = !(f === "pilote" && !actif); $("abRestoF").hidden = f === "pro"; r = $("abResto").checked;
       $("abPer").hidden = f === "pilote" || actif; if (f === "pilote") an = false;
       $("abPer").querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.p === "a") === an));
       const ht = aboHT(f, r) * (an ? ABO_MOIS_AN : 1); $("abPerL").textContent = an ? "Par an" : "Par mois";
-      $("abHT").textContent = eur(ht) + " HT"; $("abTTC").textContent = eur(Math.round(ht * 120) / 100);
-      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : an ? `12 mois pour le prix de 10 : vous économisez ${eur(aboHT(f, r) * 2)} HT. Payé aujourd'hui, puis chaque année automatiquement.` : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
+      $("abHT").textContent = eurE(ht) + " HT"; $("abTTC").textContent = eurE(Math.round(ht * 120) / 100);
+      $("abNote").textContent = actif ? "Le nouveau montant s'applique au prochain prélèvement." : f === "pilote" ? "Aujourd'hui : 1 € pour valider votre moyen de paiement. Premier prélèvement dans 2 mois." : an ? `12 mois pour le prix de 10 : vous économisez ${eurE(aboHT(f, r) * 2)} HT. Payé aujourd'hui, puis chaque année automatiquement.` : "Le premier mois est payé aujourd'hui, puis chaque mois automatiquement.";
       $("abGo").textContent = actif ? (f === a.formule && r === !!a.resto ? "Formule actuelle" : "Changer de formule") : "Continuer vers le paiement";
       $("abGo").disabled = actif && f === a.formule && r === !!a.resto; };
     document.querySelectorAll(".abo").forEach(b => b.onclick = () => { if (b.disabled) return; f = b.dataset.f; upd(); });
@@ -2059,7 +2070,7 @@ function perteSheet() {
 function pertesList() {
   const L = S.pertes || [];
   openSheet(`<h2 class="h">Pertes notées ce mois-ci</h2><div class="sub">Hors service. Les offerts et la casse notés pendant le service sont comptés dans le bilan de chaque soirée.</div>
-    <div class="card list">${L.map(x => `<div class="row"><div class="emoji">${(LOSS[x.type] || ["", "➖"])[1]}</div><div class="grow"><div class="name">${esc(x.n)}</div><div class="meta">${f1(x.q)} ${esc(x.u)} · ${new Date(x.le).toLocaleDateString("fr-FR", {day: "numeric", month: "short"})}</div></div>
+    <div class="card list">${L.map(x => `<div class="row"><div class="emoji">${(LOSS[x.type] || ["", "➖"])[1]}</div><div class="grow"><div class="name">${esc(x.n)}</div><div class="meta">${f1(x.q)} ${esc(x.u)} · ${new Date(x.le).toLocaleDateString(LOC(), {day: "numeric", month: "short"})}</div></div>
       <div class="right"><div class="m h" style="color:var(--bad)">${eur(x.c)}</div><button class="mini ghostmini" data-del="${esc(x.id)}">Retirer</button></div></div>`).join("") || `<div class="empty">Aucune perte</div>`}</div>`, () => {
     $("sBody").querySelectorAll("[data-del]").forEach(b => armBtn(b, "Confirmer", async () => { if (await act(() => actDeletePerte(b.dataset.del), "Perte retirée")) pertesList(); }));
   });
@@ -2075,7 +2086,7 @@ function allergenSheet() {
     <div class="algtable">${html || `<div class="empty">Rien à afficher pour l'instant.</div>`}</div>
     <button class="btn" id="algPrint">🖨️ Imprimer ou enregistrer en PDF</button>`, () => {
     $("algPrint").onclick = () => { const pa = $("printArea");
-      pa.innerHTML = `<h1>${esc(S.bar || "Notre carte")} : allergènes</h1><p>Liste des 14 allergènes réglementaires présents dans nos plats et boissons. Renseignez-vous auprès de notre équipe en cas de doute.</p>${html}<p class="pf">Mise à jour le ${new Date().toLocaleDateString("fr-FR")}</p>`;
+      pa.innerHTML = `<h1>${esc(S.bar || "Notre carte")} : allergènes</h1><p>Liste des 14 allergènes réglementaires présents dans nos plats et boissons. Renseignez-vous auprès de notre équipe en cas de doute.</p>${html}<p class="pf">Mise à jour le ${new Date().toLocaleDateString(LOC())}</p>`;
       window.print(); };
   });
 }
@@ -2101,7 +2112,7 @@ function renderCharges(d) {
   el.innerHTML = `<div class="chgrid"><div><div class="l">Charges fixes</div><div class="v h">${eur(tot, 0)}<small> / mois</small></div></div>
       <div><div class="l">Par verre vendu</div><div class="v h">${eur(cpv())}</div></div>
       <div><div class="l">Bénéfice réel moyen</div><div class="v h" style="color:${avgNet < 0 ? "var(--bad)" : "var(--ok)"}">${eur(avgNet)}<small> / verre</small></div></div></div>
-    <p class="chline">${isFinite(need) ? `Il faut vendre environ <b>${need.toLocaleString("fr-FR")} verres par mois</b> pour payer vos charges. Vous en vendez environ ${vol.toLocaleString("fr-FR")} : ${res >= 0 ? `bénéfice estimé <b style="color:var(--ok)">${eur(res, 0)} / mois</b>` : `il manque <b style="color:var(--bad)">${eur(-res, 0)} / mois</b>`}.` : ""}
+    <p class="chline">${isFinite(need) ? `Il faut vendre environ <b>${need.toLocaleString(LOC())} verres par mois</b> pour payer vos charges. Vous en vendez environ ${vol.toLocaleString(LOC())} : ${res >= 0 ? `bénéfice estimé <b style="color:var(--ok)">${eur(res, 0)} / mois</b>` : `il manque <b style="color:var(--bad)">${eur(-res, 0)} / mois</b>`}.` : ""}
     ${loss.length ? `<br><b style="color:var(--bad)">${loss.length} boisson${loss.length > 1 ? "s" : ""} vendue${loss.length > 1 ? "s" : ""} à perte</b> : ${loss.slice(0, 3).map(i => esc(i.o.n)).join(", ")}${loss.length > 3 ? "…" : ""}` : ""}</p>
     <div class="chbtns">${loss.length ? `<button class="mini" id="chSee">Voir la carte</button>` : ""}<button class="mini ghostmini" id="chEdit">Modifier mes charges</button></div>`;
   $("chEdit").onclick = chargesSheet; if ($("chSee")) $("chSee").onclick = () => { sortBy = "marg"; go("menu"); };
@@ -2111,7 +2122,7 @@ function chargesSheet() {
   openSheet(`<h2 class="h">Mes charges fixes</h2><div class="sub">Par mois, hors taxes. Elles sont réparties sur chaque verre vendu pour calculer votre bénéfice réel. Vos barmen ne les voient pas.</div>
     ${CH_LINES.map(([k, l]) => `<div class="field"><label for="ch_${k}">${l}</label><div class="eurin"><input id="ch_${k}" inputmode="decimal" value="${f1x(c[k] ?? "")}" placeholder="0"><span>€</span></div>${k === "salaires" ? `<button type="button" class="link" id="chSal" style="padding:6px 0 0;font-size:12px">Calculer avec les heures de travail</button><div id="chSalBox" hidden class="two" style="margin-top:8px"><div class="field"><label for="chH">Heures par mois (toute l'équipe)</label><input id="chH" inputmode="decimal" placeholder="Ex : 300"></div><div class="field"><label for="chT">Coût horaire chargé (€)</label><input id="chT" inputmode="decimal" placeholder="Ex : 18"></div></div>` : ""}</div>`).join("")}
     <div class="field"><label for="ch_v">${restoOn() ? "Verres et plats vendus par mois" : "Verres vendus par mois (toute la carte)"}</label><input id="ch_v" inputmode="decimal" value="${f1x(c.v)}" placeholder="Ex : 3000">
-      ${real ? `<button type="button" class="link" id="chReal" style="padding:6px 0 0;font-size:12px">Utiliser mes ventes réelles : environ ${real.toLocaleString("fr-FR")} verres par mois</button>` : `<div class="tip" style="padding:6px 0 0">Une estimation suffit pour commencer. Après quelques services, Dosis Bar vous proposera le vrai chiffre.</div>`}</div>
+      ${real ? `<button type="button" class="link" id="chReal" style="padding:6px 0 0;font-size:12px">Utiliser mes ventes réelles : environ ${real.toLocaleString(LOC())} verres par mois</button>` : `<div class="tip" style="padding:6px 0 0">Une estimation suffit pour commencer. Après quelques services, Dosis Bar vous proposera le vrai chiffre.</div>`}</div>
     <div class="field"><label for="ch_net">Bénéfice réel visé : <b id="ch_netl" style="color:var(--amber2)">${num(c.net)} %</b></label><input id="ch_net" class="range" type="range" min="0" max="40" value="${num(c.net)}"></div>
     <div class="card" style="background:var(--card2)"><div class="res" id="chRes"></div></div>
     <button class="btn" id="chSave">Enregistrer</button>${S.ch ? `<div class="gap"></div><button class="btn danger" id="chDel">Ne plus utiliser les charges</button>` : ""}`, () => {
@@ -2119,7 +2130,7 @@ function chargesSheet() {
     const upd = () => { const x = read(), tot = chTotal(x), per = cpv(x), d = scoreData(), need = d.avgEur > 0 ? Math.ceil(tot / d.avgEur) : NaN;
       $("ch_netl").textContent = x.net + " %";
       $("chRes").innerHTML = `<div><div class="l">Total par mois</div><div class="v h">${eur(tot, 0)}</div></div><div><div class="l">Charges par verre</div><div class="v h">${per ? eur(per) : "—"}</div></div>
-        <div style="grid-column:1/-1"><div class="l">Seuil de rentabilité</div><div style="font-size:13px;margin-top:3px">${isFinite(need) && tot ? `${need.toLocaleString("fr-FR")} verres par mois pour payer vos charges` : "—"}</div></div>`; };
+        <div style="grid-column:1/-1"><div class="l">Seuil de rentabilité</div><div style="font-size:13px;margin-top:3px">${isFinite(need) && tot ? `${need.toLocaleString(LOC())} verres par mois pour payer vos charges` : "—"}</div></div>`; };
     $("sBody").querySelectorAll("input").forEach(e => e.oninput = upd); upd();
     $("chSal").onclick = () => { $("chSalBox").hidden = false; $("chH").focus(); };
     const sal = () => { const h = num($("chH").value), t = num($("chT").value); if (h && t) { $("ch_salaires").value = f1x(Math.round(h * t)); upd(); } };
@@ -2132,6 +2143,34 @@ function chargesSheet() {
     if ($("chDel")) armBtn($("chDel"), "Toucher encore pour confirmer", async () => { if (await act(() => actCharges(null), "Charges retirées")) closeSheet(); });
   });
 }
+
+/* ================= Pays, TVA, devise et langue ================= */
+function paysSheet() {
+  const L = PAYS.LANG, T0 = PAYS.tx(), perso = {...((S.opts && S.opts.tvaPerso) || {})};
+  const names = PAYS.ORDER.map(c => [c, PAYS.paysName(c)]);
+  openSheet(`<h2 class="h">Pays, TVA et devise</h2><div class="sub">Les taux servent à calculer vos prix hors taxe et vos marges</div>
+    <div class="field"><label for="pyP">Pays de l'établissement</label><select id="pyP">${opts(names, T0.code)}</select></div>
+    <div id="pyBox"></div>
+    <div class="tip" style="padding:2px 0 12px">Taux préremplis d'après les règles de chaque pays au 1er janvier 2026. Ils peuvent changer : faites-les confirmer par votre comptable.</div>
+    <button class="btn" id="pySave">Enregistrer</button>`);
+  const fld = (k, l, v) => `<div class="field"><label for="py_${k}">${l}</label><input id="py_${k}" inputmode="decimal" value="${f1x(v)}"></div>`;
+  const draw = () => { const c = $("pyP").value, b = PAYS.P[c], r = {...b, ...(perso[c] || {})};
+    $("pyBox").innerHTML = b.ht
+      ? `<div class="card" style="margin-bottom:12px"><div class="name">Prix affichés hors taxe</div><p class="tip" style="margin:4px 0 0">Aux États-Unis, la taxe de vente (sales tax) dépend de l'État et de la ville, et elle s'ajoute au prix de la carte à l'encaissement. Dosis Bar calcule donc vos marges sur les prix de la carte, sans taxe.</p></div>`
+        + fld("st", "Votre taux de taxe de vente (pour information)", r.st || 0)
+      : `<div class="two">${fld("alc", "Boissons alcoolisées sur place (%)", r.alc)}${fld("soft", "Boissons sans alcool sur place (%)", r.soft)}</div>
+         <div class="two">${fld("food", "Repas sur place (%)", r.food)}${fld("emp", "Vente à emporter (%)", r.emp)}</div>`;
+    $("pyBox").innerHTML += `<div class="field"><label for="pyC">Devise</label><select id="pyC" ${b.perso ? "" : "disabled"}>${opts(PAYS.CURS.map(x => [x, x]), r.cur)}</select></div>`; };
+  draw(); $("pyP").onchange = draw;
+  $("pySave").onclick = async () => { const c = $("pyP").value, b = PAYS.P[c], o = {};
+    ["alc", "soft", "food", "emp", "st"].forEach(k => { const e = $("py_" + k); if (e) { const v = Math.max(0, Math.min(40, num(e.value))); if (v !== (b[k] || 0)) o[k] = v; } });
+    if (b.perso) o.cur = $("pyC").value;
+    if (Object.keys(o).length) perso[c] = o; else delete perso[c];
+    $("pySave").classList.add("busy");
+    if (await act(() => actOpts({pays: c, tvaPerso: perso}), "Réglages enregistrés ✓")) { PAYS.rememberPays(c); closeSheet(); render(); }
+    else $("pySave").classList.remove("busy"); };
+}
+function langSelect(id) { return `<select id="${id}" aria-label="Langue">${opts([["fr", "Français"], ["es", "Español"], ["en", "English"]], PAYS.LANG)}</select>`; }
 
 /* ================= Réglages ================= */
 function settingsSheet() {
@@ -2151,6 +2190,8 @@ function settingsSheet() {
     <div class="field"><label for="sT2">Objectif bouteilles et canettes servies entières (bière, soft, eau) : <b id="sT2l" style="color:var(--amber2)">${S.target2 ?? 65} %</b></label><input id="sT2" class="range" type="range" min="40" max="85" value="${S.target2 ?? 65}"></div>
     <div class="field"><label for="sV">Verres vendus par mois et par produit (pour les estimations)</label><input id="sV" inputmode="decimal" value="${S.vol}"></div>
     <button class="btn" id="sSave">Enregistrer</button>
+    <button class="btn ghost" id="sPy" style="margin-top:10px">🌍 Pays, TVA et devise · ${esc(PAYS.paysName(PAYS.pays()))}</button>
+    <div class="field" style="margin-top:10px"><label for="sLg">Langue de l'application</label>${langSelect("sLg")}</div>
     <button class="btn ghost" id="sCh" style="margin-top:10px">💶 Mes charges fixes${chOn() ? " · " + eur(chTotal(), 0) + " / mois" : ""}</button>
     <button class="btn ghost" id="sRo" style="margin-top:10px"><img src="icons/logo-resto.svg" width="16" height="18" alt="" style="vertical-align:-3px;margin-right:4px"> Dosis Resto · ${restoOn() ? "activé" : "désactivé"}</button>
     <button class="btn ghost" id="sZo" style="margin-top:10px">🏷️ Prix par zone${ZONES.some(([k]) => k !== "comptoir" && zoneOn(k)) ? " · " + ZONES.filter(([k]) => zoneOn(k)).map(z => z[1]).join(", ") : " (comptoir, salle, terrasse, happy hour)"}</button>
@@ -2158,7 +2199,7 @@ function settingsSheet() {
     <button class="btn ghost" id="sBi" style="margin-top:10px">📊 Bilan du mois pour le comptable</button>
     <button class="btn ghost" id="sCa" style="margin-top:10px">🔌 Ma caisse enregistreuse${S.caisse ? " · " + esc(CAISSE_NOMS[S.caisse.fournisseur] || "") + " connectée" : ""}</button><a class="btn ghost" href="guide.html" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none">📘 Guide d'utilisation</a><button class="btn ghost" id="sAb" style="margin-top:10px">💳 Mon abonnement${S.abo && S.abo.statut === "actif" ? " · " + ABO_NOMS[S.abo.formule] : ""}</button>${avisBtns()}${acc}${`<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`}`, () => {
     armAvis();
-    $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sCa").onclick = caisseSheet; $("sAb").onclick = aboSheet;
+    $("sPy").onclick = paysSheet; $("sLg").onchange = () => PAYS.setLang($("sLg").value); $("sCh").onclick = chargesSheet; $("sRo").onclick = restoSheet; $("sZo").onclick = zonesSheet; $("sAl").onclick = allergenSheet; $("sBi").onclick = () => bilanSheet(0); $("sCa").onclick = caisseSheet; $("sAb").onclick = aboSheet;
     $("sT").oninput = () => $("sTl").textContent = $("sT").value + " %";
     $("sT2").oninput = () => $("sT2l").textContent = $("sT2").value + " %";
     $("sSave").onclick = async () => { $("sSave").classList.add("busy");
@@ -2338,7 +2379,7 @@ async function avisList() {
       const rows = await q(sb.rpc("lire_avis"));
       const ic = {aime: "👍", manque: "💡", bloque: "⚠️"};
       $("avL").innerHTML = rows.length ? rows.map(r => `<div class="row avis-row${r.lu ? "" : " neuf"}" data-id="${r.id}"><div class="grow">
-        <div class="meta">${ic[r.humeur] || "💬"} ${esc(new Date(r.cree_le).toLocaleString("fr-FR", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}))} · ${esc(r.etab_nom || "Sans établissement")}${r.role ? " · " + (r.role === "patron" ? "Patron" : "Barman") : ""}</div>
+        <div class="meta">${ic[r.humeur] || "💬"} ${esc(new Date(r.cree_le).toLocaleString(LOC(), {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}))} · ${esc(r.etab_nom || "Sans établissement")}${r.role ? " · " + (r.role === "patron" ? "Patron" : "Barman") : ""}</div>
         <div class="avis-msg">${esc(r.message)}</div><div class="meta">${esc(r.email || "")}</div></div></div>`).join("")
         : `<div class="empty">Aucun avis pour l'instant.</div>`;
       rows.filter(r => !r.lu).forEach(r => sb.rpc("marquer_avis_lu", {p_id: r.id}));
@@ -2384,7 +2425,7 @@ function showAuth(screen, msg) {
       <form id="aJoin"><div class="field"><label for="aCode">Code à 6 caractères</label><input id="aCode" required maxlength="6" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:.2em;text-align:center"></div>
       <div class="err" id="aErr2" role="alert"></div><button class="btn ghost" type="submit">Rejoindre</button></form></div>
     <div class="center"><button class="link" id="aOut">Se déconnecter</button></div>`;
-  $("authBody").innerHTML = html + `<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div>`; A.classList.add("on"); A.scrollTop = 0;
+  $("authBody").innerHTML = html + `<div class="center" style="margin-top:18px;font-size:12px;color:var(--mut)"><a href="mentions-legales.html" style="color:var(--mut)">Mentions légales</a> · <a href="confidentialite.html" style="color:var(--mut)">Confidentialité</a> · <a href="conditions.html" style="color:var(--mut)">Conditions</a> · <a href="cgv.html" style="color:var(--mut)">CGV</a></div><div class="center" style="margin-top:10px" data-lang-switch></div>`; A.classList.add("on"); if (window.DOSIS_LANGSW) window.DOSIS_LANGSW(); A.scrollTop = 0;
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on("aSignup", () => showAuth("signup")); on("aLogin", () => showAuth("login")); on("aForgot", () => showAuth("forgot"));
   on("aDemo", () => { lsSet(MKEY, "demo"); hideAuth(); startDemo(); });

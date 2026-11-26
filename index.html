@@ -31,6 +31,9 @@
 })();
 </script>
 <link rel="stylesheet" href="css/site.css">
+<script src="js/pays.js?v=1"></script>
+<script src="js/i18n.js?v=1"></script>
+<style>.langsw{font:inherit;font-size:13px;padding:4px 6px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;cursor:pointer}.langsw option{color:#111}</style>
 </head>
 <body>
 
@@ -41,6 +44,7 @@
       Dosis <b>Bar</b>
     </a>
     <nav aria-label="Compte">
+      <span data-lang-switch></span>
       <a class="lnk" href="#produits">Bar et Resto</a>
       <a class="lnk" href="#prix">Tarifs</a>
       <a class="lnk" href="app.html">Se connecter</a>
@@ -253,11 +257,12 @@
 <footer>
   <div class="wrap">
     <span>© 2026 PARIS RHUM CLUB · <a href="mailto:contact@dosisbar.com">contact@dosisbar.com</a></span>
-    <nav aria-label="Informations légales"><a href="guide.html">Guide d'utilisation</a><a href="mentions-legales.html">Mentions légales</a><a href="confidentialite.html">Confidentialité</a><a href="conditions.html">Conditions d'utilisation</a><a href="cgv.html">CGV</a></nav>
+    <nav aria-label="Informations légales"><span data-lang-switch></span><a href="guide.html">Guide d'utilisation</a><a href="mentions-legales.html">Mentions légales</a><a href="confidentialite.html">Confidentialité</a><a href="conditions.html">Conditions d'utilisation</a><a href="cgv.html">CGV</a></nav>
   </div>
 </footer>
 
 <script>
+var TVA = 1 + (window.DOSIS_PAYS ? window.DOSIS_PAYS.rate("alc") : 0.2);
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var num = function (v) { var n = parseFloat(String(v).replace(",", ".").replace(/\s/g, "")); return isFinite(n) ? n : 0; };
@@ -272,8 +277,8 @@
   function calc() {
     var bt = mode === "bouteille";
     var b = num($("cBut").value), cap = num($("cCap").value), d = num($("cDose").value), ttc = num($("cPrix").value);
-    var ht = ttc / 1.2, cout = cap > 0 ? b / cap * d : 0;
-    var htB = num($("cPrixB").value) / 1.2, okB = b > 0 && htB > 0;
+    var ht = ttc / TVA, cout = cap > 0 ? b / cap * d : 0;
+    var htB = num($("cPrixB").value) / TVA, okB = b > 0 && htB > 0;
     var vHt = bt ? htB : ht, vCout = bt ? b : cout, m = vHt - vCout, taux = vHt > 0 ? m / vHt * 100 : 0, obj = bt ? 70 : 80;
     var okV = b > 0 && cap > 0 && d > 0 && ttc > 0, ok = bt ? okB : okV;
     $("gain").firstChild.nodeValue = ok ? eur(m, 2) : "—";
@@ -283,7 +288,7 @@
     $("coef").textContent = ok && vCout > 0 ? "coefficient × " + (vHt / vCout).toFixed(1).replace(".", ",") : "";
     var lvl = Math.max(0, Math.min(1, taux / 100)), y = 46 - 41 * lvl;
     $("liq").style.transform = "translateY(" + y + "px)";
-    var conseil = Math.ceil(vCout / (1 - obj / 100) * 1.2 * (bt ? 1 : 10) - 1e-9) / (bt ? 1 : 10);
+    var conseil = Math.ceil(vCout / (1 - obj / 100) * TVA * (bt ? 1 : 10) - 1e-9) / (bt ? 1 : 10);
     $("conseil").innerHTML = !ok ? "" : taux >= obj ? "Belle marge. Dosis Bar la suit pour chaque produit de votre carte."
       : "Pour atteindre " + obj + " % de marge, " + (bt ? "cette bouteille" : "ce verre") + " devrait être vendu" + (bt ? "e" : "") + " <b>" + eur(conseil, bt ? 0 : 2) + "</b>.";
     // un centilitre de trop par verre, 10 verres par soir, 6 soirs sur 7
