@@ -743,7 +743,10 @@ let cuTab = "d";
 const PRC = {n: "Paris Rhum Club", contact: "", email: window.PRC_EMAIL || "", tel: "06 61 81 99 81", jours: "", site: "rhumcubain.com (espace professionnel en bas de la page d'accueil)", prc: true,
   note: "Fournisseur partenaire de Dosis Bar : rhums, liqueurs, bières et cocktails cubains"};
 const prcFour = () => fours().find(f => f.prc || /paris rhum club/i.test(f.n || ""));
+const PRC_EXCLUS = ["US"];   // pays où le catalogue Paris Rhum Club n'est pas proposé
+const prcOk = () => !PRC_EXCLUS.includes(PAYS.pays());
 async function ensurePrc() {
+  if (!prcOk()) return null;
   const ex = prcFour();
   if (ex && ex.prc && !isBarman() && canEdit() && ((!ex.email && PRC.email) || !ex.tel)) {   // compléter les coordonnées des fiches déjà créées
     try { await actSaveFour(ex.id, {...ex, email: ex.email || PRC.email, tel: ex.tel || PRC.tel, site: PRC.site}); save(); } catch (e) {}
@@ -756,6 +759,7 @@ async function ensurePrc() {
 const normN = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 function prcDose(x) { return x.c === "Bière" ? x.cl : 4; }
 function prcSheet() {
+  if (!prcOk()) return;
   const L = window.CATALOGUE_PRC || [], have = new Set(S.products.map(p => normN(p.n))), sel = new Set();
   const marques = [...new Set(L.map(x => x.m))];
   const row = (x, i) => { const in_ = have.has(normN(x.full));
@@ -788,7 +792,7 @@ function prcSheet() {
 }
 function needEditUI(fn) { if (!canEdit()) return lockSheet(); return fn(); }
 function renderMenu() {
-  if ($("prcBtn")) { $("prcBtn").hidden = !(menuKind === "p" && !isBarman() && (window.CATALOGUE_PRC || []).length); $("prcBtn").onclick = prcSheet; }
+  if ($("prcBtn")) { $("prcBtn").hidden = !(menuKind === "p" && !isBarman() && prcOk() && (window.CATALOGUE_PRC || []).length); $("prcBtn").onclick = prcSheet; }
   const segC = $("menuSeg").querySelector('[data-v="c"]');
   if (restoOn() && !segC) { const b = document.createElement("button"); b.dataset.v = "c"; b.textContent = "Cuisine"; $("menuSeg").appendChild(b); armSeg(); }
   if (!restoOn() && segC) { segC.remove(); if (menuKind === "c") menuKind = "p"; armSeg(); }
