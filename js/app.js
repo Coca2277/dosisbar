@@ -1880,7 +1880,7 @@ function aboTva() { const p = PAYS.pays();   // TVA française seulement pour la
   if (p === "FR") return {taux: 20, label: "TTC (TVA 20 %)", ue: false};
   if (PAYS_UE.includes(p)) return {taux: 0, label: "Sans TVA française (autoliquidation)", ue: true};
   return {taux: 0, label: "Sans TVA française", ue: false}; }
-const moneyC = (v, cur, d = 2) => cur === "EUR" ? eurE(v, d) : new Intl.NumberFormat(LOC(), {style: "currency", currency: cur, minimumFractionDigits: d, maximumFractionDigits: d}).format(v);
+const moneyC = (v, cur, d = 2) => cur === "EUR" ? eurE(v, d) : new Intl.NumberFormat(LOC(), {style: "currency", currency: cur, currencyDisplay: "narrowSymbol", minimumFractionDigits: d, maximumFractionDigits: d}).format(v);
 const ABO_MOIS_AN = 10;
 const ABO_HT = new Proxy({}, {get: (o, k) => aboGrille().g[k]});
 const prixAbo = (k, d = 0) => moneyC(aboGrille().g[k], aboGrille().cur, d);

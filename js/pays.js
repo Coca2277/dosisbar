@@ -79,7 +79,7 @@
     const c = cur(), l = loc();
     if (c === "EUR" && (l === "fr-FR" || l === "es-ES")) return v.toLocaleString(l, {minimumFractionDigits: d, maximumFractionDigits: d}) + " €";
     const k = l + c + d;
-    if (!fmtCache[k]) fmtCache[k] = new Intl.NumberFormat(l, {style: "currency", currency: c, minimumFractionDigits: d, maximumFractionDigits: d});
+    if (!fmtCache[k]) fmtCache[k] = new Intl.NumberFormat(l, {style: "currency", currency: c, currencyDisplay: "narrowSymbol", minimumFractionDigits: d, maximumFractionDigits: d});
     return fmtCache[k].format(v);
   }
   function symbol() { try { return new Intl.NumberFormat(loc(), {style: "currency", currency: cur(), currencyDisplay: "narrowSymbol"}).formatToParts(0).find(p => p.type === "currency").value; } catch (e) { return cur(); } }
